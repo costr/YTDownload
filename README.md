@@ -117,3 +117,7 @@ Paste a YouTube URL (Video, Playlist, or Channel) into the search box and click 
 
 ## License
 MIT License - See [LICENSE](LICENSE) for details.
+
+## Credits
+
+This project was developed with the assistance of **Gemini CLI**, an interactive AI agent specializing in software engineering tasks, which helped with implementation, containerization, and documentation.
