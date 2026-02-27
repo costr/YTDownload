@@ -99,6 +99,8 @@ tasks: Dict[str, dict] = {}
 
 class VideoRequest(BaseModel):
     url: str
+    tab: Optional[str] = None
+    offset: Optional[int] = 0
 
 class Clip(BaseModel):
     start: Optional[str] = None
@@ -230,6 +232,57 @@ async def download_worker(task_id: str, request: DownloadRequest):
 @app.post("/info")
 def get_video_info(request: VideoRequest):
     try:
+        # Detect if it's a channel URL, ensuring it's not a watch URL
+        is_watch = "watch?v=" in request.url or "youtu.be/" in request.url
+        is_channel = not is_watch and ("/@" in request.url or "/channel/" in request.url or "/c/" in request.url or "/user/" in request.url)
+        
+        if is_channel:
+            # Robust way to get the base channel URL (e.g., https://www.youtube.com/@name)
+            # Remove any trailing slashes and then take everything up to the 4th part
+            clean_url = request.url.rstrip('/')
+            parts = clean_url.split('/')
+            # parts will be ['https:', '', 'www.youtube.com', '@name', 'videos']
+            if len(parts) >= 4:
+                base_url = "/".join(parts[:4])
+            else:
+                base_url = clean_url
+            
+            # If a specific tab is requested (for infinite scroll)
+            if request.tab:
+                suffix = f"/{request.tab.lower()}"
+                tab_url = f"{base_url}{suffix}"
+                start = (request.offset or 0) + 1
+                end = start + 49
+                
+                ydl_opts = {
+                    'quiet': True, 
+                    'extract_flat': 'in_playlist',
+                    'playlist_items': f"{start}:{end}",
+                }
+                
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    res = ydl.extract_info(tab_url, download=False)
+                    entries = []
+                    for entry in res.get('entries', []):
+                        if entry:
+                            entries.append({
+                                'title': entry.get('title'),
+                                'url': entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}",
+                                'id': entry.get('id'),
+                                'thumbnail': entry.get('thumbnails', [{}])[0].get('url') if entry.get('thumbnails') else None
+                            })
+                    return {"entries": entries, "next_offset": end if entries else None}
+
+            # Initial channel load - just get first page of everything or specific tabs
+            tabs = ["Videos", "Shorts", "Streams", "Playlists"]
+            return {
+                "is_channel": True,
+                "title": base_url.split('@')[-1],
+                "tabs": tabs,
+                "original_url": request.url
+            }
+
+        # Existing Playlist/Video logic
         ydl_opts = {
             'quiet': True, 
             'extract_flat': 'in_playlist',
@@ -250,6 +303,7 @@ def get_video_info(request: VideoRequest):
                         })
                 return {
                     "is_playlist": True,
+                    "is_channel": False,
                     "title": result.get('title'),
                     "entries": entries,
                     "original_url": request.url
@@ -306,6 +360,7 @@ def get_video_info(request: VideoRequest):
 
             return {
                 "is_playlist": False,
+                "is_channel": False,
                 "title": info.get('title'),
                 "duration": info.get('duration'),
                 "thumbnail": info.get('thumbnail'),

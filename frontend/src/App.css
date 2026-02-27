@@ -385,6 +385,152 @@ button:disabled {
   border-color: #ff0000;
 }
 
+.channel-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid #333;
+  padding-bottom: 0.5rem;
+}
+
+.tab-btn {
+  background: transparent;
+  color: #888;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  color: white;
+  background: #222;
+}
+
+.tab-btn.active {
+  color: white;
+  background: #ff0000;
+}
+
+.channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.channel-card {
+  background: #222;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 2px solid transparent;
+}
+
+.channel-card:hover {
+  background: #333;
+  transform: translateY(-2px);
+}
+
+.channel-card.selected {
+  border-color: #ff0000;
+  background: #333;
+}
+
+.channel-thumb-wrapper {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%; /* 16:9 */
+  background: #111;
+}
+
+.channel-thumb-wrapper img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.channel-card-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.channel-card:hover .channel-card-overlay {
+  opacity: 1;
+}
+
+.overlay-btn {
+  background: #ff0000;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+}
+
+.overlay-btn:hover {
+  transform: scale(1.1);
+  background: #cc0000;
+}
+
+.overlay-btn.inspect-btn {
+  background: #444;
+}
+
+.selection-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: #ff0000;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+}
+
+.channel-card-title {
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  color: #ccc;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.2;
+}
+
+.selection-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .footer-controls {
   margin-top: 1.5rem;
   display: flex;
@@ -422,4 +568,38 @@ button:disabled {
   color: #ff4444;
   margin-top: 0.5rem;
   font-size: 0.9rem;
+}
+
+.floating-queue-pill {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  background: #ff0000;
+  color: white;
+  padding: 0.75rem 1.25rem;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  cursor: pointer;
+  z-index: 1000;
+  font-weight: bold;
+  font-size: 0.9rem;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  animation: slideIn 0.5s ease-out;
+}
+
+.floating-queue-pill:hover {
+  transform: scale(1.05) translateY(-5px);
+  background: #cc0000;
+}
+
+.floating-queue-pill:active {
+  transform: scale(0.95);
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
