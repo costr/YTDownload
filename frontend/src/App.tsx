@@ -38,6 +38,7 @@ interface VideoInfo {
   is_channel: boolean;
   entries?: PlaylistEntry[];
   tabs?: string[];
+  active_tab?: string;
   title: string;
   duration?: number;
   thumbnail?: string;
@@ -230,13 +231,13 @@ function App() {
 
   useEffect(() => {
     if (info?.is_channel) {
-      setActiveTab('Videos');
+      setActiveTab(info.active_tab || 'Videos');
       setChannelEntries([]);
       setChannelOffset(0);
       setHasMore(true);
-      fetchTabEntries('Videos', 0, true);
+      fetchTabEntries(info.active_tab || 'Videos', 0, true);
     }
-  }, [info?.original_url]);
+  }, [info?.original_url, info?.active_tab]);
 
   useEffect(() => {
     if (info?.is_channel && activeTab) {
@@ -643,13 +644,23 @@ function App() {
                           <div className="channel-thumb-wrapper">
                             {entry.thumbnail && <img src={entry.thumbnail} alt="" />}
                             <div className="channel-card-overlay">
-                            <button 
-                              className="overlay-btn select-btn" 
-                              title="Add Playlist to Queue"
-                              onClick={() => addPlaylistToQueue(entry.url)}
-                            >
-                              <Plus size={18}/>
-                            </button>
+                              {activeTab === 'Playlists' ? (
+                                <button 
+                                  className="overlay-btn select-btn" 
+                                  title="Add Playlist to Queue"
+                                  onClick={() => addPlaylistToQueue(entry.url)}
+                                >
+                                  <Plus size={18}/>
+                                </button>
+                              ) : (
+                                <button 
+                                  className="overlay-btn select-btn" 
+                                  onClick={() => selectedPlaylistIds.includes(entry.id) ? setSelectedPlaylistIds(selectedPlaylistIds.filter(id => id !== entry.id)) : setSelectedPlaylistIds([...selectedPlaylistIds, entry.id])}
+                                >
+                                  {selectedPlaylistIds.includes(entry.id) ? <CheckSquare size={18}/> : <Plus size={18}/>}
+                                </button>
+                              )}
+                              
                               {activeTab === 'Playlists' ? (
                                 <button className="overlay-btn inspect-btn" title="Browse Playlist" onClick={() => fetchInfo(entry.url, true, false)}>
                                   <LayoutList size={18} />
@@ -690,7 +701,8 @@ function App() {
               <h3 style={{margin: 0}}>Download Queue ({clips.length})</h3>
               <div style={{display: 'flex', gap: '0.5rem'}}>
                 <button onClick={() => clips.filter(c => c.status === 'idle').forEach(c => startDownload(c.id))} className="icon-btn" style={{backgroundColor: '#ff0000', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Start All"><Download size={14}/> Start All</button>
-                <button onClick={() => setClips(clips.filter(c => c.status !== 'completed' && c.status !== 'error'))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Clear Done"><Eraser size={14}/> Clear Done</button>
+                <button onClick={() => setClips(clips.filter(c => c.status !== 'completed' && c.status !== 'error'))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Clear Finished"><Eraser size={14}/> Clear Done</button>
+                <button onClick={() => setClips([])} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Clear Entire Queue"><Trash2 size={14}/> Clear Queue</button>
                 <button onClick={() => setClips(clips.map(c => ({ ...c, audioOnly: false })))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Set all to Video"><Video size={14}/> All</button>
                 <button onClick={() => setClips(clips.map(c => ({ ...c, audioOnly: true })))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Set all to Audio"><Music size={14}/> All</button>
               </div>

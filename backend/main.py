@@ -237,17 +237,24 @@ def get_video_info(request: VideoRequest):
         is_channel = not is_watch and ("/@" in request.url or "/channel/" in request.url or "/c/" in request.url or "/user/" in request.url)
         
         if is_channel:
-            # Robust way to get the base channel URL (e.g., https://www.youtube.com/@name)
-            # Remove any trailing slashes and then take everything up to the 4th part
+            # Robust way to get the base channel URL
             clean_url = request.url.rstrip('/')
             parts = clean_url.split('/')
-            # parts will be ['https:', '', 'www.youtube.com', '@name', 'videos']
-            if len(parts) >= 4:
+            
+            # Identify if a specific tab was requested in the URL
+            target_tab = "Videos"
+            if parts[-1].lower() in ["shorts", "streams", "playlists", "videos"]:
+                target_tab = parts[-1].capitalize()
                 base_url = "/".join(parts[:4])
             else:
-                base_url = clean_url
+                # Default to Videos and try to find base URL up to the @name part
+                target_tab = "Videos"
+                if len(parts) >= 4:
+                    base_url = "/".join(parts[:4])
+                else:
+                    base_url = clean_url
             
-            # If a specific tab is requested (for infinite scroll)
+            # If a specific tab is requested (for infinite scroll) via the API param
             if request.tab:
                 suffix = f"/{request.tab.lower()}"
                 tab_url = f"{base_url}{suffix}"
@@ -261,17 +268,17 @@ def get_video_info(request: VideoRequest):
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                                            res = ydl.extract_info(tab_url, download=False)
-                                            entries = []
-                                            for entry in res.get('entries', []):
-                                                if not entry or not entry.get('id') or entry.get('title') == '[Private video]':
-                                                    continue
-                                                entries.append({
-                                                    'title': entry.get('title'),
-                                                    'url': entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}",
-                                                    'id': entry.get('id'),
-                                                    'thumbnail': entry.get('thumbnails', [{}])[0].get('url') if entry.get('thumbnails') else None
-                                                })
+                    res = ydl.extract_info(tab_url, download=False)
+                    entries = []
+                    for entry in res.get('entries', []):
+                        if not entry or not entry.get('id') or entry.get('title') == '[Private video]':
+                            continue
+                        entries.append({
+                            'title': entry.get('title'),
+                            'url': entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}",
+                            'id': entry.get('id'),
+                            'thumbnail': entry.get('thumbnails', [{}])[0].get('url') if entry.get('thumbnails') else None
+                        })
                     
                     return {"entries": entries, "next_offset": end if entries else None}
 
@@ -281,6 +288,7 @@ def get_video_info(request: VideoRequest):
                 "is_channel": True,
                 "title": base_url.split('@')[-1],
                 "tabs": tabs,
+                "active_tab": target_tab,
                 "original_url": request.url
             }
 
@@ -303,15 +311,15 @@ def get_video_info(request: VideoRequest):
                         
                     # Extract thumbnail from the entry
                     thumbnail = entry.get('thumbnail')
-                        if not thumbnail and entry.get('thumbnails'):
-                            thumbnail = entry.get('thumbnails')[0].get('url')
-                            
-                        entries.append({
-                            'title': entry.get('title') or f"Video {entry.get('id')}",
-                            'url': f"https://www.youtube.com/watch?v={entry.get('id')}",
-                            'id': entry.get('id'),
-                            'thumbnail': thumbnail
-                        })
+                    if not thumbnail and entry.get('thumbnails'):
+                        thumbnail = entry.get('thumbnails')[0].get('url')
+                        
+                    entries.append({
+                        'title': entry.get('title') or f"Video {entry.get('id')}",
+                        'url': f"https://www.youtube.com/watch?v={entry.get('id')}",
+                        'id': entry.get('id'),
+                        'thumbnail': thumbnail
+                    })
                 return {
                     "is_playlist": True,
                     "is_channel": False,
