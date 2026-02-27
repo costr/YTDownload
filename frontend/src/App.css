@@ -274,6 +274,7 @@ button:disabled {
 }
 
 .status-processing { background: #3366ff; color: white; }
+.status-queued { background: #666; color: white; }
 .status-completed { background: #00cc66; color: white; }
 .status-idle { background: #555; color: white; }
 .status-error { background: #ff4444; color: white; }

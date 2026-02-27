@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Trash2, Download, Clock, Loader2, CheckCircle, AlertCircle, Music, Video, List, Search, CheckSquare, Square, Check } from 'lucide-react';
+import { Plus, Trash2, Download, Clock, Loader2, CheckCircle, AlertCircle, Music, Video, List, Search, CheckSquare, Square, Check, Eraser } from 'lucide-react';
 import './App.css';
 
 interface VideoFormat {
@@ -52,7 +52,7 @@ interface Clip {
   start: string;
   end: string;
   audioOnly: boolean;
-  status: 'idle' | 'processing' | 'completed' | 'error';
+  status: 'idle' | 'queued' | 'processing' | 'completed' | 'error';
   progress: number;
   taskId?: string;
 }
@@ -92,14 +92,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const processingClips = clips.filter(c => c.status === 'processing');
-    if (processingClips.length === 0) return;
+    const activeClips = clips.filter(c => c.status === 'processing' || c.status === 'queued');
+    if (activeClips.length === 0) return;
 
     const interval = setInterval(async () => {
       const updatedClips = [...clips];
       let changed = false;
 
-      await Promise.all(processingClips.map(async (clip) => {
+      await Promise.all(activeClips.map(async (clip) => {
         try {
           const res = await axios.get(`${API_BASE}/status/${clip.taskId}`);
           const idx = updatedClips.findIndex(c => c.id === clip.id);
@@ -252,13 +252,19 @@ function App() {
 
     try {
       const response = await axios.get(`${API_BASE}/download/${clip.taskId}`, { responseType: 'blob' });
+      
+      // Get filename from header if possible
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = `${clip.title}.${clip.audioOnly ? 'mp3' : 'mp4'}`;
+      if (contentDisposition) {
+        const fileNameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+        if (fileNameMatch && fileNameMatch[1]) filename = fileNameMatch[1];
+      }
+
       const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = blobUrl;
-      
-      // Preserve casing and spaces, but remove invalid system characters
-      const safeTitle = clip.title.replace(/[<>:"/\\|?*\x00-\x1F]/g, '').trim();
-      link.setAttribute('download', `${safeTitle}.${clip.audioOnly ? 'mp3' : 'mp4'}`);
+      link.setAttribute('download', filename);
       
       document.body.appendChild(link);
       link.click();
@@ -536,26 +542,34 @@ function App() {
                     clips.filter(c => c.status === 'idle').forEach(c => startDownload(c.id));
                   }}
                   className="icon-btn" 
-                  style={{backgroundColor: '#ff0000', borderRadius: '6px', padding: '0.5rem 1rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.5rem', height: 'auto'}}
+                  style={{backgroundColor: '#ff0000', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}}
                   title="Start All"
                 >
-                  <Download size={14}/> Start All
+                  <Download size={14}/> Start
+                </button>
+                <button 
+                  onClick={() => setClips(clips.filter(c => c.status !== 'completed' && c.status !== 'error'))}
+                  className="icon-btn" 
+                  style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}}
+                  title="Clear Finished"
+                >
+                  <Eraser size={14}/> Clear
                 </button>
                 <button 
                   onClick={() => setClips(clips.map(c => ({ ...c, audioOnly: false })))}
                   className="icon-btn" 
-                  style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 1rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.5rem', height: 'auto'}}
+                  style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}}
                   title="Set all to Video"
                 >
-                  <Video size={14}/> Video All
+                  <Video size={14}/> All
                 </button>
                 <button 
                   onClick={() => setClips(clips.map(c => ({ ...c, audioOnly: true })))}
                   className="icon-btn" 
-                  style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 1rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.5rem', height: 'auto'}}
+                  style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}}
                   title="Set all to Audio"
                 >
-                  <Music size={14}/> Audio All
+                  <Music size={14}/> All
                 </button>
                 <button onClick={addClip} className="icon-btn" style={{backgroundColor: '#444', padding: '0.5rem'}}>
                   <Plus size={20}/>
@@ -613,10 +627,16 @@ function App() {
                       </button>
                     </div>
 
-                    {clip.status === 'idle' && (
-                      <button onClick={() => startDownload(clip.id)} style={{background: '#ff0000', padding: '6px 12px', fontSize: '0.85rem'}}>Start</button>
-                    )}
-                    {clip.status === 'processing' && (
+                                          {clip.status === 'idle' && (
+                                            <button onClick={() => startDownload(clip.id)} style={{background: '#ff0000', padding: '6px 12px', fontSize: '0.85rem'}}>Start</button>
+                                          )}
+                                          {clip.status === 'queued' && (
+                                             <div className="status-tag status-queued">
+                                               <Clock size={12} style={{marginRight: '6px'}}/> Waiting...
+                                             </div>
+                                          )}
+                                          {clip.status === 'processing' && (
+                    
                        <div className="status-tag status-processing">
                          <Loader2 size={12} className="spinning" style={{marginRight: '6px'}}/> 
                          {Math.round(clip.progress)}%
@@ -628,9 +648,18 @@ function App() {
                                             </div>
                                           )}
                     
-                    {clip.status === 'error' && (
-                       <div className="status-tag status-error"><AlertCircle size={12}/> Error</div>
-                    )}
+                                          {clip.status === 'error' && (
+                                             <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
+                                               <div className="status-tag status-error"><AlertCircle size={12}/> Error</div>
+                                               <button 
+                                                 onClick={() => startDownload(clip.id)}
+                                                 style={{background: '#444', padding: '4px 8px', fontSize: '0.7rem', borderRadius: '4px'}}
+                                               >
+                                                 Retry
+                                               </button>
+                                             </div>
+                                          )}
+                    
                     <button onClick={() => removeClip(clip.id)} className="icon-btn" style={{color: '#ff4444'}}><Trash2 size={18}/></button>
                   </div>
                 </div>
