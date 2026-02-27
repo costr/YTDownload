@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Trash2, Download, Clock, Loader2, CheckCircle, AlertCircle, Music, Video, List, Search, CheckSquare, Square, Check, Eraser, Eye, LayoutList } from 'lucide-react';
+import { Plus, Trash2, Download, Clock, Loader2, CheckCircle, AlertCircle, Music, Video, List, Search, CheckSquare, Square, Check, Eraser, Eye, LayoutList, ArrowLeft } from 'lucide-react';
 import './App.css';
 
 interface VideoFormat {
@@ -73,8 +73,10 @@ function App() {
   const [url, setUrl] = useState('');
   const [info, setInfo] = useState<VideoInfo | null>(null);
   const [selectedVideoInfo, setSelectedVideoInfo] = useState<VideoInfo | null>(null);
+  const [browsingPlaylist, setBrowsingPlaylist] = useState<VideoInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [inspectingVideo, setInspectingVideo] = useState(false);
+  const [loadingPlaylist, setLoadingPlaylist] = useState(false);
   const [error, setError] = useState('');
   const [clips, setClips] = useState<Clip[]>([]);
   const [selectedFormat, setSelectedFormat] = useState('best');
@@ -166,24 +168,29 @@ function App() {
     }
   }, [info?.original_url, selectedVideoInfo?.original_url, playerReady]);
 
-  const fetchInfo = async (overrideUrl?: string) => {
+  const fetchInfo = async (overrideUrl?: string, isBrowsingPlaylist: boolean = false, showLoadingState: boolean = true) => {
     const targetUrl = overrideUrl || url;
     if (!targetUrl) return;
     
-    if (overrideUrl) {
+    if (isBrowsingPlaylist) {
+      setLoadingPlaylist(true);
+    } else if (overrideUrl && showLoadingState) {
       setInspectingVideo(true);
-    } else {
+    } else if (!overrideUrl) {
       setLoading(true);
     }
     
     setError('');
     try {
       const res = await axios.post(`${API_BASE}/info`, { url: targetUrl });
-      if (overrideUrl) {
+      if (isBrowsingPlaylist) {
+        setBrowsingPlaylist(res.data);
+      } else if (overrideUrl) {
         setSelectedVideoInfo(res.data);
       } else {
         setInfo(res.data);
         setSelectedVideoInfo(null);
+        setBrowsingPlaylist(null);
         setClips([]);
       }
       setTranscriptSearch('');
@@ -193,6 +200,7 @@ function App() {
     } finally {
       setLoading(false);
       setInspectingVideo(false);
+      setLoadingPlaylist(false);
     }
   };
 
@@ -348,7 +356,33 @@ function App() {
     }
   };
 
-  const activeInfo = selectedVideoInfo || (info && !info.is_channel && !info.is_playlist ? info : null);
+  const addPlaylistToQueue = async (playlistUrl: string) => {
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE}/info`, { url: playlistUrl });
+      if (res.data.entries) {
+        const newClips: Clip[] = res.data.entries.map((entry: any) => ({
+          id: Math.random().toString(36).substr(2, 9),
+          title: entry.title,
+          url: entry.url,
+          start: '00:00',
+          end: '',
+          audioOnly: false,
+          status: 'idle',
+          progress: 0
+        }));
+        setClips(prev => [...prev, ...newClips]);
+      }
+    } catch (err) {
+      alert("Failed to add playlist to queue.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const activeInfo = (selectedVideoInfo && !selectedVideoInfo.is_playlist && !selectedVideoInfo.is_channel) 
+    ? selectedVideoInfo 
+    : (info && !info.is_channel && !info.is_playlist ? info : null);
 
   return (
     <div className="app-container">
@@ -538,26 +572,36 @@ function App() {
           </div>
           <div className="channel-tabs">
             {info.tabs?.map(tab => (
-              <button key={tab} className={`tab-btn ${activeTab === tab ? 'active' : ''}`} onClick={() => setActiveTab(tab)}>{tab}</button>
+              <button key={tab} className={`tab-btn ${activeTab === tab ? 'active' : ''}`} onClick={() => { setActiveTab(tab); setBrowsingPlaylist(null); }}>{tab}</button>
             ))}
           </div>
           <div style={{marginTop: '1.5rem'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
-              <h3 style={{margin: 0}}>{activeTab}</h3>
-              {channelEntries.length > 0 && (
-                <button onClick={() => {
-                  const sectionIds = channelEntries.map(e => e.id);
-                  const allSelected = sectionIds.every(id => selectedPlaylistIds.includes(id));
-                  setSelectedPlaylistIds(allSelected ? selectedPlaylistIds.filter(id => !sectionIds.includes(id)) : [...new Set([...selectedPlaylistIds, ...sectionIds])]);
-                }} style={{background: '#333', fontSize: '0.75rem', padding: '4px 10px'}}>Toggle Page Selection</button>
-              )}
-            </div>
-            {loadingMore && channelEntries.length === 0 ? (
-              <div style={{textAlign: 'center', padding: '5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem'}}><Loader2 size={40} className="spinning" color="#ff0000" /><div style={{color: '#888'}}>Loading {activeTab}...</div></div>
-            ) : (
+            {loadingPlaylist ? (
+              <div style={{textAlign: 'center', padding: '5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem'}}>
+                <Loader2 size={40} className="spinning" color="#ff0000" />
+                <div style={{color: '#888'}}>Loading playlist content...</div>
+              </div>
+            ) : browsingPlaylist ? (
               <>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #333', paddingBottom: '0.5rem'}}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
+                    <button onClick={() => setBrowsingPlaylist(null)} className="icon-btn" style={{backgroundColor: '#333', borderRadius: '4px'}}><ArrowLeft size={18}/></button>
+                    <h3 style={{margin: 0}}>{browsingPlaylist.title} (Playlist)</h3>
+                  </div>
+                  <button onClick={() => {
+                    const sectionIds = browsingPlaylist.entries?.map(e => e.id) || [];
+                    const allSelected = sectionIds.every(id => selectedPlaylistIds.includes(id));
+                    if (allSelected) {
+                      setSelectedPlaylistIds(selectedPlaylistIds.filter(id => !sectionIds.includes(id)));
+                    } else {
+                      setSelectedPlaylistIds([...new Set([...selectedPlaylistIds, ...sectionIds])]);
+                    }
+                  }} style={{background: '#333', fontSize: '0.75rem', padding: '4px 10px'}}>
+                    {(browsingPlaylist.entries?.every(e => selectedPlaylistIds.includes(e.id))) ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
                 <div className="channel-grid">
-                  {channelEntries.map(entry => (
+                  {browsingPlaylist.entries?.map(entry => (
                     <div key={entry.id} className={`channel-card ${selectedPlaylistIds.includes(entry.id) ? 'selected' : ''}`}>
                       <div className="channel-thumb-wrapper">
                         {entry.thumbnail && <img src={entry.thumbnail} alt="" />}
@@ -565,11 +609,7 @@ function App() {
                           <button className="overlay-btn select-btn" onClick={() => selectedPlaylistIds.includes(entry.id) ? setSelectedPlaylistIds(selectedPlaylistIds.filter(id => id !== entry.id)) : setSelectedPlaylistIds([...selectedPlaylistIds, entry.id])}>
                             {selectedPlaylistIds.includes(entry.id) ? <CheckSquare size={18}/> : <Plus size={18}/>}
                           </button>
-                          {activeTab !== 'Playlists' && (
-                            <button className="overlay-btn inspect-btn" onClick={() => { fetchInfo(entry.url); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-                              <Eye size={18} />
-                            </button>
-                          )}
+                          <button className="overlay-btn inspect-btn" onClick={() => { fetchInfo(entry.url); window.scrollTo({ top: 0, behavior: 'smooth' }); }}><Eye size={18} /></button>
                         </div>
                         {selectedPlaylistIds.includes(entry.id) && <div className="selection-badge"><Check size={14} color="white" /></div>}
                       </div>
@@ -577,13 +617,64 @@ function App() {
                     </div>
                   ))}
                 </div>
-                {!loadingMore && channelEntries.length === 0 && <div style={{textAlign: 'center', padding: '3rem', color: '#666'}}>No {activeTab} found.</div>}
-                {hasMore && channelEntries.length > 0 && (
-                  <div style={{textAlign: 'center', marginTop: '2rem'}}>
-                    <button onClick={() => fetchTabEntries(activeTab, channelOffset)} disabled={loadingMore} style={{background: '#333', minWidth: '200px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'}}>
-                      {loadingMore ? <><Loader2 size={16} className="spinning" /> Fetching...</> : 'Load More'}
-                    </button>
-                  </div>
+              </>
+            ) : (
+              <>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
+                  <h3 style={{margin: 0}}>{activeTab}</h3>
+                                {channelEntries.length > 0 && (
+                                  <button onClick={() => {
+                                    const sectionIds = channelEntries.map(e => e.id);
+                                    const allSelected = sectionIds.every(id => selectedPlaylistIds.includes(id));
+                                    setSelectedPlaylistIds(allSelected ? selectedPlaylistIds.filter(id => !sectionIds.includes(id)) : [...new Set([...selectedPlaylistIds, ...sectionIds])]);
+                                  }} style={{background: '#333', fontSize: '0.75rem', padding: '4px 10px'}}>
+                                    {channelEntries.every(e => selectedPlaylistIds.includes(e.id)) ? 'Deselect All' : 'Select All'}
+                                  </button>
+                                )}
+                  
+                </div>
+                {loadingMore && channelEntries.length === 0 ? (
+                  <div style={{textAlign: 'center', padding: '5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem'}}><Loader2 size={40} className="spinning" color="#ff0000" /><div style={{color: '#888'}}>Loading {activeTab}...</div></div>
+                ) : (
+                  <>
+                    <div className="channel-grid">
+                      {channelEntries.map(entry => (
+                        <div key={entry.id} className={`channel-card ${selectedPlaylistIds.includes(entry.id) ? 'selected' : ''}`}>
+                          <div className="channel-thumb-wrapper">
+                            {entry.thumbnail && <img src={entry.thumbnail} alt="" />}
+                            <div className="channel-card-overlay">
+                            <button 
+                              className="overlay-btn select-btn" 
+                              title="Add Playlist to Queue"
+                              onClick={() => addPlaylistToQueue(entry.url)}
+                            >
+                              <Plus size={18}/>
+                            </button>
+                              {activeTab === 'Playlists' ? (
+                                <button className="overlay-btn inspect-btn" title="Browse Playlist" onClick={() => fetchInfo(entry.url, true, false)}>
+                                  <LayoutList size={18} />
+                                </button>
+                              ) : (
+                                <button className="overlay-btn inspect-btn" title="Inspect Video" onClick={() => { fetchInfo(entry.url); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                                  <Eye size={18} />
+                                </button>
+                              )}
+                            </div>
+                            {selectedPlaylistIds.includes(entry.id) && <div className="selection-badge"><Check size={14} color="white" /></div>}
+                          </div>
+                          <div className="channel-card-title">{entry.title}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {!loadingMore && channelEntries.length === 0 && <div style={{textAlign: 'center', padding: '3rem', color: '#666'}}>No {activeTab} found.</div>}
+                    {hasMore && channelEntries.length > 0 && (
+                      <div style={{textAlign: 'center', marginTop: '2rem'}}>
+                        <button onClick={() => fetchTabEntries(activeTab, channelOffset)} disabled={loadingMore} style={{background: '#333', minWidth: '200px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'}}>
+                          {loadingMore ? <><Loader2 size={16} className="spinning" /> Fetching...</> : 'Load More'}
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}

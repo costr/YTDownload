@@ -261,16 +261,18 @@ def get_video_info(request: VideoRequest):
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    res = ydl.extract_info(tab_url, download=False)
-                    entries = []
-                    for entry in res.get('entries', []):
-                        if entry:
-                            entries.append({
-                                'title': entry.get('title'),
-                                'url': entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}",
-                                'id': entry.get('id'),
-                                'thumbnail': entry.get('thumbnails', [{}])[0].get('url') if entry.get('thumbnails') else None
-                            })
+                                            res = ydl.extract_info(tab_url, download=False)
+                                            entries = []
+                                            for entry in res.get('entries', []):
+                                                if not entry or not entry.get('id') or entry.get('title') == '[Private video]':
+                                                    continue
+                                                entries.append({
+                                                    'title': entry.get('title'),
+                                                    'url': entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}",
+                                                    'id': entry.get('id'),
+                                                    'thumbnail': entry.get('thumbnails', [{}])[0].get('url') if entry.get('thumbnails') else None
+                                                })
+                    
                     return {"entries": entries, "next_offset": end if entries else None}
 
             # Initial channel load - just get first page of everything or specific tabs
@@ -292,14 +294,23 @@ def get_video_info(request: VideoRequest):
             # First extraction to see what it is
             result = ydl.extract_info(request.url, download=False)
             
-            if result.get('_type') == 'playlist':
+            if result.get('_type') == 'playlist' or 'entries' in result:
                 entries = []
                 for entry in result.get('entries', []):
-                    if entry:
+                    # Skip private or unavailable videos
+                    if not entry or not entry.get('id') or entry.get('title') == '[Private video]':
+                        continue
+                        
+                    # Extract thumbnail from the entry
+                    thumbnail = entry.get('thumbnail')
+                        if not thumbnail and entry.get('thumbnails'):
+                            thumbnail = entry.get('thumbnails')[0].get('url')
+                            
                         entries.append({
-                            'title': entry.get('title'),
+                            'title': entry.get('title') or f"Video {entry.get('id')}",
                             'url': f"https://www.youtube.com/watch?v={entry.get('id')}",
-                            'id': entry.get('id')
+                            'id': entry.get('id'),
+                            'thumbnail': thumbnail
                         })
                 return {
                     "is_playlist": True,
