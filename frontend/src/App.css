@@ -101,6 +101,30 @@ button:disabled {
   height: 100%;
 }
 
+.heatmap-container {
+  display: flex;
+  align-items: flex-end;
+  height: 40px;
+  width: 100%;
+  margin-top: 4px;
+  background: #111;
+  border-radius: 4px;
+  overflow: hidden;
+  gap: 1px;
+}
+
+.heatmap-bar {
+  flex: 1;
+  background: #444;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.heatmap-bar:hover {
+  background: #ff0000;
+  transform: scaleY(1.1);
+}
+
 .controls-overlay {
   display: flex;
   gap: 0.5rem;

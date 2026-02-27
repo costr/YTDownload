@@ -114,7 +114,8 @@ def get_video_info(request: VideoRequest):
             
             # Extract chapters
             chapters = []
-            for c in info.get('chapters', []):
+            raw_chapters = info.get('chapters') or []
+            for c in raw_chapters:
                 chapters.append({
                     'title': c.get('title'),
                     'start': c.get('start_time'),
@@ -139,6 +140,7 @@ def get_video_info(request: VideoRequest):
                 "thumbnail": info.get('thumbnail'),
                 "formats": formats,
                 "chapters": chapters,
+                "heatmap": info.get('heatmap'),
                 "original_url": request.url
             }
     except Exception as e:

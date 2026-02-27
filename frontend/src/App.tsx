@@ -15,12 +15,19 @@ interface Chapter {
   end: number;
 }
 
+interface HeatmapPoint {
+  start_time: number;
+  end_time: number;
+  value: number;
+}
+
 interface VideoInfo {
   title: string;
   duration: number;
   thumbnail: string;
   formats: VideoFormat[];
   chapters: Chapter[];
+  heatmap?: HeatmapPoint[];
   original_url: string;
 }
 
@@ -264,6 +271,24 @@ function App() {
               <div className="player-container">
                 <div id="yt-player"></div>
               </div>
+
+              {info.heatmap && info.heatmap.length > 0 && (
+                <div className="heatmap-container" title="Most Replayed Moments">
+                  {info.heatmap.map((point, i) => (
+                    <div 
+                      key={i} 
+                      className="heatmap-bar" 
+                      style={{height: `${Math.max(10, point.value * 100)}%`}}
+                      onClick={() => {
+                        if (playerRef.current && playerRef.current.seekTo) {
+                          playerRef.current.seekTo(point.start_time, true);
+                        }
+                      }}
+                    ></div>
+                  ))}
+                </div>
+              )}
+
               <div className="controls-overlay">
                 <button onClick={() => {
                    const time = getCurrentTime();
