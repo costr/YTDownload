@@ -108,6 +108,11 @@ function App() {
              if (updatedClips[idx].progress !== data.progress || updatedClips[idx].status !== data.status) {
                 updatedClips[idx] = { ...updatedClips[idx], status: data.status, progress: data.progress };
                 changed = true;
+                
+                // If it just finished, trigger the file save automatically
+                if (data.status === 'completed') {
+                  finalizeDownload(updatedClips[idx].id);
+                }
              }
           }
         } catch (e) {
@@ -516,97 +521,124 @@ function App() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
 
-            <div className="clip-list">
-              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                <h3>Clips</h3>
-                <button onClick={addClip} className="icon-btn" style={{backgroundColor: '#444'}}>
+      {clips.length > 0 && (
+        <div className="card">
+          <div className="clip-list">
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
+              <h3 style={{margin: 0}}>Download Queue ({clips.length})</h3>
+              <div style={{display: 'flex', gap: '0.5rem'}}>
+                <button 
+                  onClick={() => {
+                    clips.filter(c => c.status === 'idle').forEach(c => startDownload(c.id));
+                  }}
+                  className="icon-btn" 
+                  style={{backgroundColor: '#ff0000', borderRadius: '6px', padding: '0.5rem 1rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.5rem', height: 'auto'}}
+                  title="Start All"
+                >
+                  <Download size={14}/> Start All
+                </button>
+                <button 
+                  onClick={() => setClips(clips.map(c => ({ ...c, audioOnly: false })))}
+                  className="icon-btn" 
+                  style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 1rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.5rem', height: 'auto'}}
+                  title="Set all to Video"
+                >
+                  <Video size={14}/> Video All
+                </button>
+                <button 
+                  onClick={() => setClips(clips.map(c => ({ ...c, audioOnly: true })))}
+                  className="icon-btn" 
+                  style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 1rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.5rem', height: 'auto'}}
+                  title="Set all to Audio"
+                >
+                  <Music size={14}/> Audio All
+                </button>
+                <button onClick={addClip} className="icon-btn" style={{backgroundColor: '#444', padding: '0.5rem'}}>
                   <Plus size={20}/>
                 </button>
               </div>
-              
-              {clips.length === 0 && (
-                <p style={{fontSize: '0.9rem', color: '#888', textAlign: 'center', padding: '1rem'}}>
-                  Mark segments or choose a suggested chapter.
-                </p>
-              )}
-
-              {clips.map((clip) => (
-                <div key={clip.id} className="clip-item">
-                  <div className="clip-row">
-                    <div className="clip-inputs">
-                      <input 
-                        className="clip-title-input"
-                        type="text" 
-                        placeholder="Clip Title"
-                        value={clip.title}
-                        onChange={(e) => updateClip(clip.id, 'title', e.target.value)}
-                        disabled={clip.status !== 'idle'}
-                      />
-                      <input 
-                        className="clip-time-input"
-                        type="text" 
-                        value={clip.start} 
-                        onChange={(e) => updateClip(clip.id, 'start', e.target.value)}
-                        disabled={clip.status !== 'idle'} 
-                      />
-                      <span style={{color: '#888'}}>to</span>
-                      <input 
-                        className="clip-time-input"
-                        type="text" 
-                        placeholder="End"
-                        value={clip.end} 
-                        onChange={(e) => updateClip(clip.id, 'end', e.target.value)}
-                        disabled={clip.status !== 'idle'} 
-                      />
-                    </div>
-                    
-                    <div className="clip-actions">
-                      <div style={{display: 'flex', gap: '0.2rem', background: '#222', padding: '2px', borderRadius: '6px', marginRight: '4px'}}>
-                        <button 
-                          className={`icon-btn clip-type-btn ${!clip.audioOnly ? 'active' : ''}`}
-                          onClick={() => updateClip(clip.id, 'audioOnly', false)}
-                          disabled={clip.status !== 'idle'}
-                          title="Video"
-                        >
-                          <Video size={14}/>
-                        </button>
-                        <button 
-                          className={`icon-btn clip-type-btn ${clip.audioOnly ? 'active' : ''}`}
-                          onClick={() => updateClip(clip.id, 'audioOnly', true)}
-                          disabled={clip.status !== 'idle'}
-                          title="Audio"
-                        >
-                          <Music size={14}/>
-                        </button>
-                      </div>
-
-                      {clip.status === 'idle' && (
-                        <button onClick={() => startDownload(clip.id)} style={{background: '#ff0000', padding: '6px 12px', fontSize: '0.85rem'}}>Start</button>
-                      )}
-                      {clip.status === 'processing' && (
-                         <div className="status-tag status-processing">
-                           <Loader2 size={12} className="spinning" style={{marginRight: '6px'}}/> 
-                           {Math.round(clip.progress)}%
-                         </div>
-                      )}
-                      {clip.status === 'completed' && (
-                        <button onClick={() => finalizeDownload(clip.id)} className="status-tag status-completed" style={{border: 'none', cursor: 'pointer'}}>
-                          <CheckCircle size={12} style={{marginRight: '6px'}}/> Save
-                        </button>
-                      )}
-                      {clip.status === 'error' && (
-                         <div className="status-tag status-error"><AlertCircle size={12}/> Error</div>
-                      )}
-                      <button onClick={() => removeClip(clip.id)} className="icon-btn" style={{color: '#ff4444'}}><Trash2 size={18}/></button>
-                    </div>
-                  </div>
-                  {clip.status === 'processing' && (
-                    <div className="progress-container"><div className="progress-bar" style={{width: `${clip.progress}%`}}></div></div>
-                  )}
-                </div>
-              ))}
             </div>
+            
+            {clips.map((clip) => (
+              <div key={clip.id} className="clip-item">
+                <div className="clip-row">
+                  <div className="clip-inputs">
+                    <input 
+                      className="clip-title-input"
+                      type="text" 
+                      placeholder="Title"
+                      value={clip.title}
+                      onChange={(e) => updateClip(clip.id, 'title', e.target.value)}
+                      disabled={clip.status !== 'idle'}
+                    />
+                    <input 
+                      className="clip-time-input"
+                      type="text" 
+                      value={clip.start} 
+                      onChange={(e) => updateClip(clip.id, 'start', e.target.value)}
+                      disabled={clip.status !== 'idle'} 
+                    />
+                    <span style={{color: '#888'}}>to</span>
+                    <input 
+                      className="clip-time-input"
+                      type="text" 
+                      placeholder="End"
+                      value={clip.end} 
+                      onChange={(e) => updateClip(clip.id, 'end', e.target.value)}
+                      disabled={clip.status !== 'idle'} 
+                    />
+                  </div>
+                  
+                  <div className="clip-actions">
+                    <div style={{display: 'flex', gap: '0.2rem', background: '#222', padding: '2px', borderRadius: '6px', marginRight: '4px'}}>
+                      <button 
+                        className={`icon-btn clip-type-btn ${!clip.audioOnly ? 'active' : ''}`}
+                        onClick={() => updateClip(clip.id, 'audioOnly', false)}
+                        disabled={clip.status !== 'idle'}
+                        title="Video"
+                      >
+                        <Video size={14}/>
+                      </button>
+                      <button 
+                        className={`icon-btn clip-type-btn ${clip.audioOnly ? 'active' : ''}`}
+                        onClick={() => updateClip(clip.id, 'audioOnly', true)}
+                        disabled={clip.status !== 'idle'}
+                        title="Audio"
+                      >
+                        <Music size={14}/>
+                      </button>
+                    </div>
+
+                    {clip.status === 'idle' && (
+                      <button onClick={() => startDownload(clip.id)} style={{background: '#ff0000', padding: '6px 12px', fontSize: '0.85rem'}}>Start</button>
+                    )}
+                    {clip.status === 'processing' && (
+                       <div className="status-tag status-processing">
+                         <Loader2 size={12} className="spinning" style={{marginRight: '6px'}}/> 
+                         {Math.round(clip.progress)}%
+                       </div>
+                    )}
+                                          {clip.status === 'completed' && (
+                                            <div className="status-tag status-completed">
+                                              <CheckCircle size={12} style={{marginRight: '6px'}}/> Finished
+                                            </div>
+                                          )}
+                    
+                    {clip.status === 'error' && (
+                       <div className="status-tag status-error"><AlertCircle size={12}/> Error</div>
+                    )}
+                    <button onClick={() => removeClip(clip.id)} className="icon-btn" style={{color: '#ff4444'}}><Trash2 size={18}/></button>
+                  </div>
+                </div>
+                {clip.status === 'processing' && (
+                  <div className="progress-container"><div className="progress-bar" style={{width: `${clip.progress}%`}}></div></div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
