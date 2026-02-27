@@ -218,6 +218,7 @@ function App() {
       
       const res = await axios.post(`${API_BASE}/download`, {
         url: info?.original_url,
+        title: clip.title,
         format_id: selectedFormat,
         audio_only: clip.audioOnly,
         clip: isFull ? null : { start: clip.start, end: clip.end }

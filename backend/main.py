@@ -55,6 +55,7 @@ class Clip(BaseModel):
 
 class DownloadRequest(BaseModel):
     url: str
+    title: Optional[str] = None
     format_id: str = "best"
     audio_only: bool = False
     clip: Optional[Clip] = None
@@ -93,14 +94,21 @@ def download_worker(task_id: str, request: DownloadRequest):
             'format': 'bestvideo+bestaudio/best' if not request.audio_only else 'bestaudio/best',
             # SponsorBlock integration
             'sponsorblock_remove': ['sponsor', 'selfpromo', 'interaction', 'intro', 'outro', 'preview'],
+            # Metadata & Thumbnail Tagging
+            'writethumbnail': True,
+            'postprocessors': [
+                {'key': 'FFmpegMetadata', 'add_chapters': True},
+                {'key': 'EmbedThumbnail'},
+            ],
         }
 
         if request.audio_only:
-            ydl_opts['postprocessors'] = [{
+            # For audio, we prepend the ExtractAudio processor to the list
+            ydl_opts['postprocessors'].insert(0, {
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
-            }]
+            })
         elif request.format_id != "best":
             ydl_opts['format'] = f"{request.format_id}+bestaudio/best"
             ydl_opts['merge_output_format'] = 'mp4'
@@ -113,6 +121,10 @@ def download_worker(task_id: str, request: DownloadRequest):
             ydl_opts['force_keyframes_at_cuts'] = False
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # If a custom title is provided, we can map it to the 'title' metadata
+            if request.title:
+                ydl.params['parse_metadata'] = [f":(?P<title>{request.title})"]
+            
             ydl.download([request.url])
 
         files = [f for f in os.listdir(TEMP_DIR) if f.startswith(task_id) and not f.endswith(('.part', '.ytdl'))]
