@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Trash2, Download, Clock, Loader2, CheckCircle, AlertCircle, Music, Video, List } from 'lucide-react';
+import { Plus, Trash2, Download, Clock, Loader2, CheckCircle, AlertCircle, Music, Video, List, Search } from 'lucide-react';
 import './App.css';
 
 interface VideoFormat {
@@ -21,6 +21,11 @@ interface HeatmapPoint {
   value: number;
 }
 
+interface TranscriptLine {
+  start: number;
+  text: string;
+}
+
 interface VideoInfo {
   title: string;
   duration: number;
@@ -28,6 +33,7 @@ interface VideoInfo {
   formats: VideoFormat[];
   chapters: Chapter[];
   heatmap?: HeatmapPoint[];
+  transcript?: TranscriptLine[];
   original_url: string;
 }
 
@@ -58,6 +64,7 @@ function App() {
   const [error, setError] = useState('');
   const [clips, setClips] = useState<Clip[]>([]);
   const [selectedFormat, setSelectedFormat] = useState('best');
+  const [transcriptSearch, setTranscriptSearch] = useState('');
 
   const playerRef = useRef<any>(null);
   const [playerReady, setPlayerReady] = useState(false);
@@ -134,6 +141,7 @@ function App() {
       const res = await axios.post(`${API_BASE}/info`, { url });
       setInfo(res.data);
       setClips([]);
+      setTranscriptSearch('');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to fetch video info');
     } finally {
@@ -314,7 +322,55 @@ function App() {
                   <Clock size={16} style={{marginRight: '5px'}} />
                   Mark Current Time
                 </button>
+
+                {info.transcript && info.transcript.length > 0 && (
+                  <div style={{flex: 1, position: 'relative'}}>
+                    <Search size={14} style={{position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#666'}}/>
+                    <input 
+                      type="text" 
+                      placeholder="Search transcript..."
+                      value={transcriptSearch}
+                      onChange={(e) => setTranscriptSearch(e.target.value)}
+                      style={{
+                        width: '100%',
+                        fontSize: '0.85rem', 
+                        padding: '0.5rem 0.5rem 0.5rem 2.2rem',
+                        height: '100%',
+                        borderRadius: '6px',
+                        border: '1px solid #333',
+                        background: '#2a2a2a',
+                        color: 'white'
+                      }}
+                    />
+                  </div>
+                )}
               </div>
+
+              {info.transcript && info.transcript.length > 0 && transcriptSearch && (
+                <div className="transcript-results" style={{marginTop: '0.5rem'}}>
+                  {info.transcript
+                    .filter(line => line.text.toLowerCase().includes(transcriptSearch.toLowerCase()))
+                    .slice(0, 15)
+                    .map((line, i) => (
+                      <div 
+                        key={i} 
+                        className="transcript-item"
+                        onClick={() => {
+                          if (playerRef.current && playerRef.current.seekTo) {
+                            playerRef.current.seekTo(line.start, true);
+                          }
+                        }}
+                      >
+                        <span className="transcript-time">{formatTime(line.start)}</span>
+                        <span className="transcript-text">{line.text}</span>
+                      </div>
+                    ))
+                  }
+                  {info.transcript.filter(line => line.text.toLowerCase().includes(transcriptSearch.toLowerCase())).length === 0 && (
+                    <div style={{color: '#666', fontSize: '0.85rem', padding: '0.5rem'}}>No matches found.</div>
+                  )}
+                </div>
+              )}
 
               <div className="footer-controls" style={{ marginTop: '1.5rem', justifyContent: 'flex-start' }}>
                 <div style={{display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap'}}>

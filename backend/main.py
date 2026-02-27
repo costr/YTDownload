@@ -8,6 +8,9 @@ import uuid
 import time
 from typing import List, Optional, Dict
 
+import requests
+import re
+
 app = FastAPI()
 
 app.add_middleware(
@@ -17,6 +20,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def parse_vtt(vtt_text: str):
+    transcript = []
+    # Simple VTT parser: look for timestamp lines and the following text
+    # 00:00:00.000 --> 00:00:00.000
+    blocks = re.split(r'\n\s*\n', vtt_text)
+    for block in blocks:
+        lines = block.strip().split('\n')
+        if len(lines) >= 2:
+            time_match = re.match(r'(\d{2}:\d{2}:\d{2}\.\d{3}) --> (\d{2}:\d{2}:\d{2}\.\d{3})', lines[0])
+            if time_match:
+                start_str = time_match.group(1)
+                # Convert 00:00:00.000 to seconds
+                h, m, s = start_str.split(':')
+                start_sec = int(h) * 3600 + int(m) * 60 + float(s)
+                
+                text = " ".join(lines[1:]).replace('<c>', '').replace('</c>', '').strip()
+                if text:
+                    transcript.append({'start': start_sec, 'text': text})
+    return transcript
 
 TEMP_DIR = os.path.join(os.getcwd(), "temp_downloads")
 os.makedirs(TEMP_DIR, exist_ok=True)
@@ -108,7 +131,13 @@ def download_worker(task_id: str, request: DownloadRequest):
 @app.post("/info")
 def get_video_info(request: VideoRequest):
     try:
-        ydl_opts = {'quiet': True, 'noplaylist': True}
+        ydl_opts = {
+            'quiet': True, 
+            'noplaylist': True,
+            'writesubtitles': True,
+            'writeautomaticsub': True,
+            'subtitleslangs': ['en.*'],
+        }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(request.url, download=False)
             
@@ -134,6 +163,25 @@ def get_video_info(request: VideoRequest):
             
             formats.sort(key=lambda x: int(x['resolution'][:-1]), reverse=True)
             
+            # Subtitle/Transcript logic
+            transcript = []
+            subs = info.get('subtitles', {}) or {}
+            auto_subs = info.get('automatic_captions', {}) or {}
+            
+            # Prefer manual English, then auto English
+            en_subs = subs.get('en') or auto_subs.get('en') or auto_subs.get('en-orig')
+            
+            if en_subs:
+                # Find vtt format
+                vtt_url = next((s['url'] for s in en_subs if s.get('ext') == 'vtt'), None)
+                if vtt_url:
+                    try:
+                        vtt_resp = requests.get(vtt_url)
+                        if vtt_resp.status_code == 200:
+                            transcript = parse_vtt(vtt_resp.text)
+                    except:
+                        pass
+
             return {
                 "title": info.get('title'),
                 "duration": info.get('duration'),
@@ -141,6 +189,7 @@ def get_video_info(request: VideoRequest):
                 "formats": formats,
                 "chapters": chapters,
                 "heatmap": info.get('heatmap'),
+                "transcript": transcript,
                 "original_url": request.url
             }
     except Exception as e:
