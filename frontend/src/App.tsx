@@ -324,23 +324,14 @@ function App() {
                 </button>
 
                 {info.transcript && info.transcript.length > 0 && (
-                  <div style={{flex: 1, position: 'relative'}}>
+                  <div className="transcript-search-wrapper">
                     <Search size={14} style={{position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#666'}}/>
                     <input 
                       type="text" 
+                      className="transcript-search-input"
                       placeholder="Search transcript..."
                       value={transcriptSearch}
                       onChange={(e) => setTranscriptSearch(e.target.value)}
-                      style={{
-                        width: '100%',
-                        fontSize: '0.85rem', 
-                        padding: '0.5rem 0.5rem 0.5rem 2.2rem',
-                        height: '100%',
-                        borderRadius: '6px',
-                        border: '1px solid #333',
-                        background: '#2a2a2a',
-                        color: 'white'
-                      }}
                     />
                   </div>
                 )}
