@@ -3,8 +3,8 @@ FROM python:3.11-slim
 
 # Install system dependencies
 # ffmpeg is required for yt-dlp to merge video/audio and handle post-processing
-RUN apt-get update && apt-get install -y 
-    ffmpeg 
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory in the container

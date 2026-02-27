@@ -88,7 +88,6 @@ function App() {
   const [channelOffset, setChannelOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [downloadedTaskIds, setDownloadedTaskIds] = useState<Set<string>>(new Set());
 
   const playerRef = useRef<any>(null);
   const [playerReady, setPlayerReady] = useState(false);
@@ -123,13 +122,7 @@ function App() {
                 updatedClips[idx] = { ...updatedClips[idx], status: data.status, progress: data.progress };
                 changed = true;
                 if (data.status === 'completed' && clip.taskId) {
-                  setDownloadedTaskIds(prev => {
-                    if (prev.has(clip.taskId!)) return prev;
-                    const next = new Set(prev);
-                    next.add(clip.taskId!);
-                    finalizeDownload(clip.id);
-                    return next;
-                  });
+                  finalizeDownload(clip.id);
                 }
              }
           }
@@ -277,19 +270,6 @@ function App() {
       return formatTime(playerRef.current.getCurrentTime());
     }
     return "00:00";
-  };
-
-  const addClip = () => {
-    const nextNum = clips.length + 1;
-    setClips([...clips, { 
-      id: Math.random().toString(36).substr(2, 9), 
-      title: `Clip ${nextNum}`,
-      start: '00:00', 
-      end: '', 
-      audioOnly: false,
-      status: 'idle', 
-      progress: 0 
-    }]);
   };
 
   const addSuggestionAsClip = (chapter: Chapter) => {
