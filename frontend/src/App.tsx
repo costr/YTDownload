@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, Trash2, Download, Clock, Loader2, CheckCircle, AlertCircle, Music, Video, List, Search } from 'lucide-react';
+import { Plus, Trash2, Download, Clock, Loader2, CheckCircle, AlertCircle, Music, Video, List, Search, CheckSquare, Square, Check } from 'lucide-react';
 import './App.css';
 
 interface VideoFormat {
@@ -26,10 +26,18 @@ interface TranscriptLine {
   text: string;
 }
 
-interface VideoInfo {
+interface PlaylistEntry {
   title: string;
-  duration: number;
-  thumbnail: string;
+  url: string;
+  id: string;
+}
+
+interface VideoInfo {
+  is_playlist: boolean;
+  entries?: PlaylistEntry[];
+  title: string;
+  duration?: number;
+  thumbnail?: string;
   formats: VideoFormat[];
   chapters: Chapter[];
   heatmap?: HeatmapPoint[];
@@ -40,6 +48,7 @@ interface VideoInfo {
 interface Clip {
   id: string;
   title: string;
+  url?: string;
   start: string;
   end: string;
   audioOnly: boolean;
@@ -65,6 +74,7 @@ function App() {
   const [clips, setClips] = useState<Clip[]>([]);
   const [selectedFormat, setSelectedFormat] = useState('best');
   const [transcriptSearch, setTranscriptSearch] = useState('');
+  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>([]);
 
   const playerRef = useRef<any>(null);
   const [playerReady, setPlayerReady] = useState(false);
@@ -142,6 +152,7 @@ function App() {
       setInfo(res.data);
       setClips([]);
       setTranscriptSearch('');
+      setSelectedPlaylistIds([]);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to fetch video info');
     } finally {
@@ -217,7 +228,7 @@ function App() {
       const isFull = clip.start === '00:00' && !clip.end;
       
       const res = await axios.post(`${API_BASE}/download`, {
-        url: info?.original_url,
+        url: clip.url || info?.original_url,
         title: clip.title,
         format_id: selectedFormat,
         audio_only: clip.audioOnly,
@@ -273,7 +284,72 @@ function App() {
         {error && <div className="error">{error}</div>}
       </div>
 
-      {info && (
+      {info && info.is_playlist && (
+        <div className="card">
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
+            <h2 style={{margin: 0}}>{info.title} (Playlist)</h2>
+            <div style={{display: 'flex', gap: '0.5rem'}}>
+              <button 
+                onClick={() => {
+                  if (selectedPlaylistIds.length === info.entries?.length) {
+                    setSelectedPlaylistIds([]);
+                  } else {
+                    setSelectedPlaylistIds(info.entries?.map(e => e.id) || []);
+                  }
+                }}
+                style={{background: '#333', color: 'white'}}
+              >
+                {selectedPlaylistIds.length === info.entries?.length ? 'Deselect All' : 'Select All'}
+              </button>
+              <button 
+                disabled={selectedPlaylistIds.length === 0}
+                onClick={() => {
+                const newClips: Clip[] = [];
+                info.entries?.forEach(entry => {
+                  if (selectedPlaylistIds.includes(entry.id)) {
+                    newClips.push({
+                      id: Math.random().toString(36).substr(2, 9),
+                      title: entry.title,
+                      url: entry.url,
+                      start: '00:00',
+                      end: '',
+                      audioOnly: false,
+                      status: 'idle',
+                      progress: 0,
+                    });
+                  }
+                });
+                setClips([...clips, ...newClips]);
+                setSelectedPlaylistIds([]);
+              }}
+              style={{background: selectedPlaylistIds.length > 0 ? '#ff0000' : '#555'}}
+            >
+              Add {selectedPlaylistIds.length} to Queue
+            </button>
+          </div>
+        </div>
+        <div className="playlist-entries">
+            {info.entries?.map(entry => (
+              <div 
+                key={entry.id} 
+                className={`playlist-item ${selectedPlaylistIds.includes(entry.id) ? 'selected' : ''}`}
+                onClick={() => {
+                  if (selectedPlaylistIds.includes(entry.id)) {
+                    setSelectedPlaylistIds(selectedPlaylistIds.filter(id => id !== entry.id));
+                  } else {
+                    setSelectedPlaylistIds([...selectedPlaylistIds, entry.id]);
+                  }
+                }}
+              >
+                {selectedPlaylistIds.includes(entry.id) ? <CheckSquare size={18} color="#ff0000"/> : <Square size={18}/>}
+                <span>{entry.title}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {info && !info.is_playlist && (
         <div className="card">
           <div className="video-section">
             <div>

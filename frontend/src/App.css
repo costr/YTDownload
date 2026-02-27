@@ -352,6 +352,38 @@ button:disabled {
   color: white;
 }
 
+.playlist-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.playlist-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: #2a2a2a;
+  border-radius: 8px;
+  border: 1px solid #333;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.9rem;
+}
+
+.playlist-item:hover {
+  background: #333;
+  border-color: #444;
+}
+
+.playlist-item.selected {
+  background: #333;
+  border-color: #ff0000;
+}
+
 .footer-controls {
   margin-top: 1.5rem;
   display: flex;

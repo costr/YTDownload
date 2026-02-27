@@ -145,12 +145,35 @@ def get_video_info(request: VideoRequest):
     try:
         ydl_opts = {
             'quiet': True, 
-            'noplaylist': True,
-            'writesubtitles': True,
-            'writeautomaticsub': True,
-            'subtitleslangs': ['en.*'],
+            'noplaylist': True, # We'll check for playlist manually or let yt-dlp decide
+            'extract_flat': 'in_playlist', # Fast extraction for playlists
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # First extraction to see what it is
+            result = ydl.extract_info(request.url, download=False)
+            
+            if result.get('_type') == 'playlist':
+                entries = []
+                for entry in result.get('entries', []):
+                    if entry:
+                        entries.append({
+                            'title': entry.get('title'),
+                            'url': f"https://www.youtube.com/watch?v={entry.get('id')}",
+                            'id': entry.get('id')
+                        })
+                return {
+                    "is_playlist": True,
+                    "title": result.get('title'),
+                    "entries": entries,
+                    "original_url": request.url
+                }
+
+            # If it's a single video, we re-extract with full info (subtitles, heatmap, etc)
+            ydl_opts['extract_flat'] = False
+            ydl_opts['writesubtitles'] = True
+            ydl_opts['writeautomaticsub'] = True
+            ydl_opts['subtitleslangs'] = ['en.*']
+            
             info = ydl.extract_info(request.url, download=False)
             
             # Extract chapters
@@ -195,6 +218,7 @@ def get_video_info(request: VideoRequest):
                         pass
 
             return {
+                "is_playlist": False,
                 "title": info.get('title'),
                 "duration": info.get('duration'),
                 "thumbnail": info.get('thumbnail'),
