@@ -146,23 +146,25 @@ function App() {
     if (activeInfo && !activeInfo.is_channel && playerReady) {
       const videoId = extractVideoId(activeInfo.original_url);
       if (videoId) {
+        playerRef.current = null;
         const timer = setTimeout(() => {
-          if (playerRef.current && playerRef.current.loadVideoById) {
-            playerRef.current.loadVideoById(videoId);
-          } else if (window.YT && window.YT.Player) {
+          if (window.YT && window.YT.Player) {
             playerRef.current = new window.YT.Player('yt-player', {
               videoId: videoId,
               height: '100%',
               width: '100%',
               playerVars: { 'autoplay': 0, 'modestbranding': 1 },
-              events: { 'onReady': () => console.log('Player Ready') }
+              events: { 
+                'onReady': () => console.log('Player Ready'),
+                'onError': (e: any) => console.error('YT Player Error:', e.data)
+              }
             });
           }
         }, 100);
         return () => clearTimeout(timer);
       }
     }
-  }, [info, selectedVideoInfo, playerReady]);
+  }, [info?.original_url, selectedVideoInfo?.original_url, playerReady]);
 
   const fetchInfo = async (overrideUrl?: string) => {
     const targetUrl = overrideUrl || url;
@@ -238,9 +240,17 @@ function App() {
   }, [activeTab]);
 
   const extractVideoId = (url: string) => {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
+    // Standard and mobile URLs
+    const standardRegExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const standardMatch = url.match(standardRegExp);
+    if (standardMatch && standardMatch[2].length === 11) return standardMatch[2];
+
+    // Shorts URLs (e.g., youtube.com/shorts/ID)
+    const shortsRegExp = /\/shorts\/([a-zA-Z0-9_-]{11})/;
+    const shortsMatch = url.match(shortsRegExp);
+    if (shortsMatch && shortsMatch[1]) return shortsMatch[1];
+
+    return null;
   };
 
   const formatTime = (seconds: number) => {
@@ -374,7 +384,7 @@ function App() {
         <div className="card">
           <div className="video-section">
             <div>
-              <div className="player-container">
+              <div className="player-container" key={extractVideoId(activeInfo.original_url) || 'none'}>
                 <div id="yt-player"></div>
               </div>
 
@@ -456,13 +466,13 @@ function App() {
                       setClips(prev => [...prev, newClip]);
                       // Small timeout to let state update, then start
                       setTimeout(() => startDownload(id), 50);
-                    }} style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}><Video size={16}/> Full Video</button>
+                    }} style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}><Video size={16}/> Queue Full Video</button>
                     <button onClick={() => {
                       const id = Math.random().toString(36).substr(2, 9);
                       const newClip: Clip = { id, title: activeInfo.title + " (Full Audio)", url: activeInfo.original_url, start: '00:00', end: '', audioOnly: true, status: 'idle', progress: 0 };
                       setClips(prev => [...prev, newClip]);
                       setTimeout(() => startDownload(id), 50);
-                    }} style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}><Music size={16}/> Full Audio</button>
+                    }} style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}><Music size={16}/> Queue Full Audio</button>
                   </div>
                 </div>
               </div>
@@ -491,12 +501,14 @@ function App() {
               <button onClick={() => selectedPlaylistIds.length === info.entries?.length ? setSelectedPlaylistIds([]) : setSelectedPlaylistIds(info.entries?.map(e => e.id) || [])} style={{background: '#333', color: 'white'}}>
                 {selectedPlaylistIds.length === info.entries?.length ? 'Deselect All' : 'Select All'}
               </button>
-              <button disabled={selectedPlaylistIds.length === 0} onClick={() => {
-                const newClips: Clip[] = [];
-                info.entries?.forEach(entry => { if (selectedPlaylistIds.includes(entry.id)) newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', audioOnly: false, status: 'idle', progress: 0 }); });
-                setClips([...clips, ...newClips]);
-                setSelectedPlaylistIds([]);
-              }} style={{background: selectedPlaylistIds.length > 0 ? '#ff0000' : '#555'}}>Add {selectedPlaylistIds.length} to Queue</button>
+              {selectedPlaylistIds.length > 0 && (
+                <button onClick={() => {
+                  const newClips: Clip[] = [];
+                  info.entries?.forEach(entry => { if (selectedPlaylistIds.includes(entry.id)) newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', audioOnly: false, status: 'idle', progress: 0 }); });
+                  setClips([...clips, ...newClips]);
+                  setSelectedPlaylistIds([]);
+                }} style={{background: '#ff0000'}}>Add {selectedPlaylistIds.length} to Queue</button>
+              )}
             </div>
           </div>
           <div className="playlist-entries">
@@ -515,12 +527,14 @@ function App() {
         <div className="card">
           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
             <h2 style={{margin: 0}}>{info.title}</h2>
-            <button disabled={selectedPlaylistIds.length === 0} onClick={() => {
-              const newClips: Clip[] = [];
-              channelEntries.forEach(entry => { if (selectedPlaylistIds.includes(entry.id)) newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', audioOnly: false, status: 'idle', progress: 0 }); });
-              setClips([...clips, ...newClips]);
-              setSelectedPlaylistIds([]);
-            }} style={{background: selectedPlaylistIds.length > 0 ? '#ff0000' : '#555'}}>Add {selectedPlaylistIds.length} to Queue</button>
+            {selectedPlaylistIds.length > 0 && (
+              <button onClick={() => {
+                const newClips: Clip[] = [];
+                channelEntries.forEach(entry => { if (selectedPlaylistIds.includes(entry.id)) newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', audioOnly: false, status: 'idle', progress: 0 }); });
+                setClips([...clips, ...newClips]);
+                setSelectedPlaylistIds([]);
+              }} style={{background: '#ff0000'}}>Add {selectedPlaylistIds.length} to Queue</button>
+            )}
           </div>
           <div className="channel-tabs">
             {info.tabs?.map(tab => (
@@ -551,7 +565,11 @@ function App() {
                           <button className="overlay-btn select-btn" onClick={() => selectedPlaylistIds.includes(entry.id) ? setSelectedPlaylistIds(selectedPlaylistIds.filter(id => id !== entry.id)) : setSelectedPlaylistIds([...selectedPlaylistIds, entry.id])}>
                             {selectedPlaylistIds.includes(entry.id) ? <CheckSquare size={18}/> : <Plus size={18}/>}
                           </button>
-                          <button className="overlay-btn inspect-btn" onClick={() => { fetchInfo(entry.url); window.scrollTo({ top: 0, behavior: 'smooth' }); }}><Eye size={18} /></button>
+                          {activeTab !== 'Playlists' && (
+                            <button className="overlay-btn inspect-btn" onClick={() => { fetchInfo(entry.url); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                              <Eye size={18} />
+                            </button>
+                          )}
                         </div>
                         {selectedPlaylistIds.includes(entry.id) && <div className="selection-badge"><Check size={14} color="white" /></div>}
                       </div>
@@ -580,11 +598,10 @@ function App() {
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
               <h3 style={{margin: 0}}>Download Queue ({clips.length})</h3>
               <div style={{display: 'flex', gap: '0.5rem'}}>
-                <button onClick={() => clips.filter(c => c.status === 'idle').forEach(c => startDownload(c.id))} className="icon-btn" style={{backgroundColor: '#ff0000', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Start All"><Download size={14}/> Start</button>
-                <button onClick={() => setClips(clips.filter(c => c.status !== 'completed' && c.status !== 'error'))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Clear Finished"><Eraser size={14}/> Clear</button>
+                <button onClick={() => clips.filter(c => c.status === 'idle').forEach(c => startDownload(c.id))} className="icon-btn" style={{backgroundColor: '#ff0000', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Start All"><Download size={14}/> Start All</button>
+                <button onClick={() => setClips(clips.filter(c => c.status !== 'completed' && c.status !== 'error'))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Clear Done"><Eraser size={14}/> Clear Done</button>
                 <button onClick={() => setClips(clips.map(c => ({ ...c, audioOnly: false })))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Set all to Video"><Video size={14}/> All</button>
                 <button onClick={() => setClips(clips.map(c => ({ ...c, audioOnly: true })))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Set all to Audio"><Music size={14}/> All</button>
-                <button onClick={addClip} className="icon-btn" style={{backgroundColor: '#444', padding: '0.5rem'}}><Plus size={20}/></button>
               </div>
             </div>
             {clips.map((clip) => (
