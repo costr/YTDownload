@@ -174,10 +174,10 @@ button:disabled {
   display: flex;
 }
 
-.transcript-search-input {
+.transcript-search-wrapper input.transcript-search-input {
   width: 100%;
   font-size: 0.85rem;
-  padding: 0.5rem 0.5rem 0.5rem 2.2rem;
+  padding: 0.5rem 0.5rem 0.5rem 2.5rem;
   border-radius: 6px;
   border: 1px solid #333;
   background: #2a2a2a;
@@ -185,7 +185,7 @@ button:disabled {
   outline: none;
 }
 
-.transcript-search-input:focus {
+.transcript-search-wrapper input.transcript-search-input:focus {
   border-color: #ff0000;
 }
 
