@@ -55,7 +55,8 @@ interface Clip {
   url?: string;
   start: string;
   end: string;
-  audioOnly: boolean;
+  includeVideo: boolean;
+  includeAudio: boolean;
   status: 'idle' | 'queued' | 'processing' | 'completed' | 'error';
   progress: number;
   taskId?: string;
@@ -89,6 +90,7 @@ function App() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
+  const downloadedTaskIds = useRef<Set<string>>(new Set());
   const playerRef = useRef<any>(null);
   const [playerReady, setPlayerReady] = useState(false);
 
@@ -105,26 +107,31 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const activeClips = clips.filter(c => c.status === 'processing' || c.status === 'queued');
+    const activeClips = clips.filter(c => (c.status === 'processing' || c.status === 'queued') && c.taskId);
     if (activeClips.length === 0) return;
 
     const interval = setInterval(async () => {
-      const updatedClips = [...clips];
       let changed = false;
+      const updatedClips = [...clips];
 
       await Promise.all(activeClips.map(async (clip) => {
+        if (!clip.taskId) return;
         try {
           const res = await axios.get(`${API_BASE}/status/${clip.taskId}`);
+          const data = res.data;
+          
           const idx = updatedClips.findIndex(c => c.id === clip.id);
           if (idx !== -1) {
-             const data = res.data;
-             if (updatedClips[idx].progress !== data.progress || updatedClips[idx].status !== data.status) {
-                updatedClips[idx] = { ...updatedClips[idx], status: data.status, progress: data.progress };
-                changed = true;
-                if (data.status === 'completed' && clip.taskId) {
-                  finalizeDownload(clip.id);
-                }
-             }
+            if (updatedClips[idx].progress !== data.progress || updatedClips[idx].status !== data.status) {
+              updatedClips[idx] = { ...updatedClips[idx], status: data.status, progress: data.progress };
+              changed = true;
+              
+              if (data.status === 'completed' && !downloadedTaskIds.current.has(clip.taskId)) {
+                downloadedTaskIds.current.add(clip.taskId);
+                finalizeDownload(clip.taskId, clip.title, clip.includeAudio);
+              }
+
+            }
           }
         } catch (e) {
           console.error("Status check failed", e);
@@ -278,7 +285,8 @@ function App() {
       title: chapter.title,
       start: formatTime(chapter.start),
       end: formatTime(chapter.end),
-      audioOnly: false,
+      includeVideo: true,
+      includeAudio: false,
       status: 'idle',
       progress: 0
     }]);
@@ -295,17 +303,46 @@ function App() {
   const startDownload = async (clipId: string, currentClips?: Clip[]) => {
     const list = currentClips || clips;
     const clip = list.find(c => c.id === clipId);
-    if (!clip) return;
+    if (!clip || clip.status !== 'idle') return;
 
+    // Handle duality: if both are checked, create separate tasks
+    if (clip.includeVideo && clip.includeAudio) {
+      const audioId = Math.random().toString(36).substr(2, 9);
+      const audioClip: Clip = {
+        ...clip,
+        id: audioId,
+        title: `${clip.title} (Audio)`,
+        includeVideo: false,
+        includeAudio: true,
+        status: 'processing',
+        progress: 0
+      };
+      
+      setClips(prev => {
+        const withBoth = prev.map(c => c.id === clipId ? { ...c, title: `${c.title} (Video)`, includeAudio: false, status: 'processing', progress: 0 } : c);
+        return [...withBoth, audioClip];
+      });
+
+      // Start Video task
+      await triggerDownloadTask(clipId, { ...clip, includeAudio: false });
+      // Start Audio task
+      await triggerDownloadTask(audioId, audioClip);
+      return;
+    }
+
+    // Standard case: just one format
     setClips(prev => prev.map(c => c.id === clipId ? { ...c, status: 'processing', progress: 0 } : c));
+    await triggerDownloadTask(clipId, clip);
+  };
 
+  const triggerDownloadTask = async (clipId: string, clip: Clip) => {
     try {
       const isFull = clip.start === '00:00' && !clip.end;
       const res = await axios.post(`${API_BASE}/download`, {
         url: clip.url || info?.original_url,
         title: clip.title,
         format_id: selectedFormat,
-        audio_only: clip.audioOnly,
+        audio_only: clip.includeAudio,
         clip: isFull ? null : { start: clip.start, end: clip.end }
       });
       setClips(prev => prev.map(c => c.id === clipId ? { ...c, status: 'queued', taskId: res.data.task_id } : c));
@@ -314,13 +351,11 @@ function App() {
     }
   };
 
-  const finalizeDownload = async (clipId: string) => {
-    const clip = clips.find(c => c.id === clipId);
-    if (!clip || !clip.taskId) return;
+  const finalizeDownload = async (taskId: string, title: string, audioOnly: boolean) => {
     try {
-      const response = await axios.get(`${API_BASE}/download/${clip.taskId}`, { responseType: 'blob' });
+      const response = await axios.get(`${API_BASE}/download/${taskId}`, { responseType: 'blob' });
       const contentDisposition = response.headers['content-disposition'];
-      let filename = `${clip.title}.${clip.audioOnly ? 'mp3' : 'mp4'}`;
+      let filename = `${title}.${audioOnly ? 'mp3' : 'mp4'}`;
       if (contentDisposition) {
         const fileNameMatch = contentDisposition.match(/filename="?(.+)"?/i);
         if (fileNameMatch && fileNameMatch[1]) filename = fileNameMatch[1];
@@ -332,8 +367,9 @@ function App() {
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(blobUrl);
     } catch (err) {
-      alert("Failed to save file.");
+      console.error("Failed to save file.", err);
     }
   };
 
@@ -342,16 +378,20 @@ function App() {
     try {
       const res = await axios.post(`${API_BASE}/info`, { url: playlistUrl });
       if (res.data.entries) {
-        const newClips: Clip[] = res.data.entries.map((entry: any) => ({
-          id: Math.random().toString(36).substr(2, 9),
-          title: entry.title,
-          url: entry.url,
-          start: '00:00',
-          end: '',
-          audioOnly: false,
-          status: 'idle',
-          progress: 0
-        }));
+        const existingUrls = new Set(clips.map(c => c.url).filter(Boolean));
+        const newClips: Clip[] = res.data.entries
+          .filter((entry: any) => !existingUrls.has(entry.url))
+          .map((entry: any) => ({
+            id: Math.random().toString(36).substr(2, 9),
+            title: entry.title,
+            url: entry.url,
+            start: '00:00',
+            end: '',
+            includeVideo: true,
+            includeAudio: false,
+            status: 'idle',
+            progress: 0
+          }));
         setClips(prev => [...prev, ...newClips]);
       }
     } catch (err) {
@@ -477,14 +517,14 @@ function App() {
                   <div style={{display: 'flex', gap: '0.5rem'}}>
                     <button onClick={() => {
                       const id = Math.random().toString(36).substr(2, 9);
-                      const newClip: Clip = { id, title: activeInfo.title + " (Full Video)", url: activeInfo.original_url, start: '00:00', end: '', audioOnly: false, status: 'idle', progress: 0 };
+                      const newClip: Clip = { id, title: activeInfo.title + " (Full Video)", url: activeInfo.original_url, start: '00:00', end: '', includeVideo: true, includeAudio: false, status: 'idle', progress: 0 };
                       setClips(prev => [...prev, newClip]);
                       // Small timeout to let state update, then start
                       setTimeout(() => startDownload(id), 50);
                     }} style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}><Video size={16}/> Queue Full Video</button>
                     <button onClick={() => {
                       const id = Math.random().toString(36).substr(2, 9);
-                      const newClip: Clip = { id, title: activeInfo.title + " (Full Audio)", url: activeInfo.original_url, start: '00:00', end: '', audioOnly: true, status: 'idle', progress: 0 };
+                      const newClip: Clip = { id, title: activeInfo.title + " (Full Audio)", url: activeInfo.original_url, start: '00:00', end: '', includeVideo: false, includeAudio: true, status: 'idle', progress: 0 };
                       setClips(prev => [...prev, newClip]);
                       setTimeout(() => startDownload(id), 50);
                     }} style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}><Music size={16}/> Queue Full Audio</button>
@@ -519,7 +559,12 @@ function App() {
               {selectedPlaylistIds.length > 0 && (
                 <button onClick={() => {
                   const newClips: Clip[] = [];
-                  info.entries?.forEach(entry => { if (selectedPlaylistIds.includes(entry.id)) newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', audioOnly: false, status: 'idle', progress: 0 }); });
+                  const existingUrls = new Set(clips.map(c => c.url).filter(Boolean));
+                  info.entries?.forEach(entry => { 
+                    if (selectedPlaylistIds.includes(entry.id) && !existingUrls.has(entry.url)) {
+                      newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', includeVideo: true, includeAudio: false, status: 'idle', progress: 0 }); 
+                    }
+                  });
                   setClips([...clips, ...newClips]);
                   setSelectedPlaylistIds([]);
                 }} style={{background: '#ff0000'}}>Add {selectedPlaylistIds.length} to Queue</button>
@@ -545,7 +590,13 @@ function App() {
             {selectedPlaylistIds.length > 0 && (
               <button onClick={() => {
                 const newClips: Clip[] = [];
-                channelEntries.forEach(entry => { if (selectedPlaylistIds.includes(entry.id)) newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', audioOnly: false, status: 'idle', progress: 0 }); });
+                const existingUrls = new Set(clips.map(c => c.url).filter(Boolean));
+                const sourceEntries = browsingPlaylist ? browsingPlaylist.entries : channelEntries;
+                sourceEntries?.forEach(entry => { 
+                  if (selectedPlaylistIds.includes(entry.id) && !existingUrls.has(entry.url)) {
+                    newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', includeVideo: true, includeAudio: false, status: 'idle', progress: 0 }); 
+                  }
+                });
                 setClips([...clips, ...newClips]);
                 setSelectedPlaylistIds([]);
               }} style={{background: '#ff0000'}}>Add {selectedPlaylistIds.length} to Queue</button>
@@ -683,8 +734,8 @@ function App() {
                 <button onClick={() => clips.filter(c => c.status === 'idle').forEach(c => startDownload(c.id))} className="icon-btn" style={{backgroundColor: '#ff0000', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Start All"><Download size={14}/> Start All</button>
                 <button onClick={() => setClips(clips.filter(c => c.status !== 'completed' && c.status !== 'error'))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Clear Finished"><Eraser size={14}/> Clear Done</button>
                 <button onClick={() => setClips([])} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Clear Entire Queue"><Trash2 size={14}/> Clear Queue</button>
-                <button onClick={() => setClips(clips.map(c => ({ ...c, audioOnly: false })))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Set all to Video"><Video size={14}/> All</button>
-                <button onClick={() => setClips(clips.map(c => ({ ...c, audioOnly: true })))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Set all to Audio"><Music size={14}/> All</button>
+                <button onClick={() => setClips(clips.map(c => ({ ...c, includeVideo: true, includeAudio: false })))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Set all to Video"><Video size={14}/> All</button>
+                <button onClick={() => setClips(clips.map(c => ({ ...c, includeVideo: false, includeAudio: true })))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Set all to Audio"><Music size={14}/> All</button>
               </div>
             </div>
             {clips.map((clip) => (
@@ -698,8 +749,22 @@ function App() {
                   </div>
                   <div className="clip-actions">
                     <div style={{display: 'flex', gap: '0.2rem', background: '#222', padding: '2px', borderRadius: '6px', marginRight: '4px'}}>
-                      <button className={`icon-btn clip-type-btn ${!clip.audioOnly ? 'active' : ''}`} onClick={() => updateClip(clip.id, 'audioOnly', false)} disabled={clip.status !== 'idle'} title="Video"><Video size={14}/></button>
-                      <button className={`icon-btn clip-type-btn ${clip.audioOnly ? 'active' : ''}`} onClick={() => updateClip(clip.id, 'audioOnly', true)} disabled={clip.status !== 'idle'} title="Audio"><Music size={14}/></button>
+                      <button 
+                        className={`icon-btn clip-type-btn ${clip.includeVideo ? 'active' : ''}`} 
+                        onClick={() => updateClip(clip.id, 'includeVideo', !clip.includeVideo)} 
+                        disabled={clip.status !== 'idle'} 
+                        title="Video"
+                      >
+                        <Video size={14}/>
+                      </button>
+                      <button 
+                        className={`icon-btn clip-type-btn ${clip.includeAudio ? 'active' : ''}`} 
+                        onClick={() => updateClip(clip.id, 'includeAudio', !clip.includeAudio)} 
+                        disabled={clip.status !== 'idle'} 
+                        title="Audio"
+                      >
+                        <Music size={14}/>
+                      </button>
                     </div>
                     {clip.status === 'idle' && <button onClick={() => startDownload(clip.id)} style={{background: '#ff0000', padding: '6px 12px', fontSize: '0.85rem'}}>Start</button>}
                     {clip.status === 'queued' && <div className="status-tag status-queued"><Clock size={12} style={{marginRight: '6px'}}/> Waiting...</div>}

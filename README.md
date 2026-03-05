@@ -3,7 +3,14 @@
 A modern web application for downloading YouTube videos, audio, and specific clips. Features include transcript searching, chapter suggestions, and channel browsing.
 
 ## Features
-...
+
+- **Video & Audio Downloads:** High-quality MP4 and MP3 (up to 320kbps) support.
+- **YouTube Music Support:** Download songs, albums, and playlists directly from music.youtube.com with full metadata and album art.
+- **Precise Clipping:** Mark start and end times to download specific segments.
+- **Channel & Playlist Browsing:** Search and select videos directly from channels and playlists.
+- **Transcript Search:** Find specific moments in a video using its transcript.
+- **Heatmap Visualization:** Identify the most replayed parts of a video.
+- **SponsorBlock Integration:** Automatically removes sponsors and non-music sections.
 - **No Installation Required (Browser-based):** Runs in your browser with a Python backend.
 
 ---
@@ -79,8 +86,8 @@ Ensure you have [Docker](https://www.docker.com/) and [Docker Compose](https://d
 
 ## How to Use
 
-### 1. Fetching a Video
-Paste a YouTube URL (Video, Playlist, or Channel) into the search box and click **Fetch Video**.
+### 1. Fetching a Video / Song
+Paste a YouTube or YouTube Music URL (Video, Song, Album, Playlist, or Channel) into the search box and click **Fetch Video**.
 
 ### 2. Creating Clips
 - While the video is playing, click **Mark Current Time** to set the start or end point of a clip.

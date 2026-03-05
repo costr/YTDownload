@@ -156,6 +156,7 @@ async def download_worker(task_id: str, request: DownloadRequest):
                     'sponsorblock_remove': ['sponsor', 'selfpromo', 'interaction', 'intro', 'outro', 'preview'],
                     # Metadata & Thumbnail Tagging
                     'writethumbnail': True,
+                    'writemetadata': True,
                     'postprocessors': [
                         {'key': 'FFmpegMetadata', 'add_chapters': True},
                         {'key': 'EmbedThumbnail'},
@@ -166,7 +167,7 @@ async def download_worker(task_id: str, request: DownloadRequest):
                     ydl_opts['postprocessors'].insert(0, {
                         'key': 'FFmpegExtractAudio',
                         'preferredcodec': 'mp3',
-                        'preferredquality': '192',
+                        'preferredquality': '320', # High quality for music
                     })
                 elif request.format_id != "best":
                     ydl_opts['format'] = f"{request.format_id}+bestaudio/best"
@@ -196,8 +197,12 @@ async def download_worker(task_id: str, request: DownloadRequest):
             except:
                 pass
 
-            files = [f for f in os.listdir(TEMP_DIR) if f.startswith(task_id) and not f.endswith(('.part', '.ytdl', '.webp', '.vtt'))]
+            # Only pick up the actual media files, avoiding thumbnails or metadata
+            valid_extensions = ('.mp4', '.mp3', '.m4a', '.webm', '.mkv', '.wav')
+            files = [f for f in os.listdir(TEMP_DIR) if f.startswith(task_id) and f.lower().endswith(valid_extensions) and not f.endswith(('.part', '.ytdl'))]
+            
             if files:
+                # Prefer the one with the expected extension if possible, or just the first one
                 file_path = os.path.join(TEMP_DIR, files[0])
                 
                 # If we have an upload date, let's set the file's modification time to match it
@@ -332,7 +337,7 @@ def get_video_info(request: VideoRequest):
             ydl_opts['extract_flat'] = False
             ydl_opts['writesubtitles'] = True
             ydl_opts['writeautomaticsub'] = True
-            ydl_opts['subtitleslangs'] = ['en.*']
+            ydl_opts['subtitleslangs'] = ['en.*', 'en', 'en-US', 'en-GB', '.*'] # Broaden language support
             
             info = ydl.extract_info(request.url, download=False)
             
@@ -363,12 +368,23 @@ def get_video_info(request: VideoRequest):
             subs = info.get('subtitles', {}) or {}
             auto_subs = info.get('automatic_captions', {}) or {}
             
-            # Prefer manual English, then auto English
-            en_subs = subs.get('en') or auto_subs.get('en') or auto_subs.get('en-orig')
+            # Helper to find any English variant or first available
+            def find_best_subs(sub_dict):
+                # Try common English keys first
+                for key in ['en', 'en-US', 'en-GB', 'en-orig']:
+                    if key in sub_dict: return sub_dict[key]
+                # Look for anything starting with 'en'
+                for key in sub_dict:
+                    if key.startswith('en'): return sub_dict[key]
+                # Fallback to any if English not found
+                if sub_dict: return next(iter(sub_dict.values()))
+                return None
+
+            best_subs = find_best_subs(subs) or find_best_subs(auto_subs)
             
-            if en_subs:
+            if best_subs:
                 # Find vtt format
-                vtt_url = next((s['url'] for s in en_subs if s.get('ext') == 'vtt'), None)
+                vtt_url = next((s['url'] for s in best_subs if s.get('ext') == 'vtt'), None)
                 if vtt_url:
                     try:
                         vtt_resp = requests.get(vtt_url)
