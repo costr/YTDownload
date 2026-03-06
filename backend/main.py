@@ -178,7 +178,8 @@ async def download_worker(task_id: str, request: DownloadRequest):
                         'start_time': parse_time(request.clip.start),
                         'end_time': parse_time(request.clip.end) if request.clip.end else info_dict.get('duration'),
                     }]
-                    ydl_opts['force_keyframes_at_cuts'] = False
+                    ydl_opts['force_keyframes_at_cuts'] = True
+                    ydl_opts['prefer_ffmpeg'] = True
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     if request.title:

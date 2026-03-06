@@ -311,7 +311,7 @@ function App() {
       const audioClip: Clip = {
         ...clip,
         id: audioId,
-        title: `${clip.title} (Audio)`,
+        title: clip.title,
         includeVideo: false,
         includeAudio: true,
         status: 'processing',
@@ -319,7 +319,7 @@ function App() {
       };
       
       setClips(prev => {
-        const withBoth = prev.map(c => c.id === clipId ? { ...c, title: `${c.title} (Video)`, includeAudio: false, status: 'processing', progress: 0 } : c);
+        const withBoth = prev.map(c => c.id === clipId ? { ...c, title: c.title, includeAudio: false, status: 'processing', progress: 0 } : c);
         return [...withBoth, audioClip];
       });
 
