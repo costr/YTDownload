@@ -111,6 +111,7 @@ class DownloadRequest(BaseModel):
     title: Optional[str] = None
     format_id: str = "best"
     audio_only: bool = False
+    precise: bool = False
     clip: Optional[Clip] = None
 
 def parse_time(timestr: str) -> float:
@@ -178,7 +179,7 @@ async def download_worker(task_id: str, request: DownloadRequest):
                         'start_time': parse_time(request.clip.start),
                         'end_time': parse_time(request.clip.end) if request.clip.end else info_dict.get('duration'),
                     }]
-                    ydl_opts['force_keyframes_at_cuts'] = True
+                    ydl_opts['force_keyframes_at_cuts'] = request.precise
                     ydl_opts['prefer_ffmpeg'] = True
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:

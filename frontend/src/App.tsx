@@ -57,6 +57,7 @@ interface Clip {
   end: string;
   includeVideo: boolean;
   includeAudio: boolean;
+  precise: boolean;
   status: 'idle' | 'queued' | 'processing' | 'completed' | 'error';
   progress: number;
   taskId?: string;
@@ -287,6 +288,7 @@ function App() {
       end: formatTime(chapter.end),
       includeVideo: true,
       includeAudio: false,
+      precise: false,
       status: 'idle',
       progress: 0
     }]);
@@ -343,6 +345,7 @@ function App() {
         title: clip.title,
         format_id: selectedFormat,
         audio_only: clip.includeAudio,
+        precise: clip.precise,
         clip: isFull ? null : { start: clip.start, end: clip.end }
       });
       setClips(prev => prev.map(c => c.id === clipId ? { ...c, status: 'queued', taskId: res.data.task_id } : c));
@@ -389,6 +392,7 @@ function App() {
             end: '',
             includeVideo: true,
             includeAudio: false,
+            precise: false,
             status: 'idle',
             progress: 0
           }));
@@ -466,9 +470,10 @@ function App() {
                       setClips([...clips, { 
                         id: Math.random().toString(36).substr(2, 9), 
                         title: `Clip ${clips.length + 1}`,
-                        start: time, end: '', audioOnly: false, status: 'idle', progress: 0 
+                        start: time, end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 
                       }]);
                    }
+
                 }}>
                   <Clock size={16} style={{marginRight: '5px'}} />
                   Mark Current Time
@@ -517,14 +522,14 @@ function App() {
                   <div style={{display: 'flex', gap: '0.5rem'}}>
                     <button onClick={() => {
                       const id = Math.random().toString(36).substr(2, 9);
-                      const newClip: Clip = { id, title: activeInfo.title + " (Full Video)", url: activeInfo.original_url, start: '00:00', end: '', includeVideo: true, includeAudio: false, status: 'idle', progress: 0 };
+                      const newClip: Clip = { id, title: activeInfo.title + " (Full Video)", url: activeInfo.original_url, start: '00:00', end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 };
                       setClips(prev => [...prev, newClip]);
                       // Small timeout to let state update, then start
                       setTimeout(() => startDownload(id), 50);
                     }} style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}><Video size={16}/> Queue Full Video</button>
                     <button onClick={() => {
                       const id = Math.random().toString(36).substr(2, 9);
-                      const newClip: Clip = { id, title: activeInfo.title + " (Full Audio)", url: activeInfo.original_url, start: '00:00', end: '', includeVideo: false, includeAudio: true, status: 'idle', progress: 0 };
+                      const newClip: Clip = { id, title: activeInfo.title + " (Full Audio)", url: activeInfo.original_url, start: '00:00', end: '', includeVideo: false, includeAudio: true, precise: false, status: 'idle', progress: 0 };
                       setClips(prev => [...prev, newClip]);
                       setTimeout(() => startDownload(id), 50);
                     }} style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}><Music size={16}/> Queue Full Audio</button>
@@ -561,10 +566,11 @@ function App() {
                   const newClips: Clip[] = [];
                   const existingUrls = new Set(clips.map(c => c.url).filter(Boolean));
                   info.entries?.forEach(entry => { 
-                    if (selectedPlaylistIds.includes(entry.id) && !existingUrls.has(entry.url)) {
-                      newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', includeVideo: true, includeAudio: false, status: 'idle', progress: 0 }); 
+                    if (selectedPlaylistIds.includes(entry.id) && !existingUrls.has(entry.url)) {        
+                      newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 }); 
                     }
                   });
+
                   setClips([...clips, ...newClips]);
                   setSelectedPlaylistIds([]);
                 }} style={{background: '#ff0000'}}>Add {selectedPlaylistIds.length} to Queue</button>
@@ -594,7 +600,7 @@ function App() {
                 const sourceEntries = browsingPlaylist ? browsingPlaylist.entries : channelEntries;
                 sourceEntries?.forEach(entry => { 
                   if (selectedPlaylistIds.includes(entry.id) && !existingUrls.has(entry.url)) {
-                    newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', includeVideo: true, includeAudio: false, status: 'idle', progress: 0 }); 
+                    newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 }); 
                   }
                 });
                 setClips([...clips, ...newClips]);
@@ -766,6 +772,19 @@ function App() {
                         <Music size={14}/>
                       </button>
                     </div>
+                    {(clip.start !== '00:00' || clip.end) && (
+                      <button 
+                        className={`fine-cut-toggle ${clip.precise ? 'active' : ''}`}
+                        onClick={() => updateClip(clip.id, 'precise', !clip.precise)}
+                        disabled={clip.status !== 'idle'}
+                        title={clip.precise 
+                          ? "Fine Cut: Frame-accurate precision. Re-encodes video around cuts to match your exact timestamps. (Slower processing)" 
+                          : "Rough Cut: Keyframe-accurate. Clips at the nearest video keyframe, which may be +/- 1-2 seconds off. (Faster processing)"
+                        }
+                      >
+                        {clip.precise ? "Fine Cut" : "Rough Cut"}
+                      </button>
+                    )}
                     {clip.status === 'idle' && <button onClick={() => startDownload(clip.id)} style={{background: '#ff0000', padding: '6px 12px', fontSize: '0.85rem'}}>Start</button>}
                     {clip.status === 'queued' && <div className="status-tag status-queued"><Clock size={12} style={{marginRight: '6px'}}/> Waiting...</div>}
                     {clip.status === 'processing' && <div className="status-tag status-processing"><Loader2 size={12} className="spinning" style={{marginRight: '6px'}}/> {Math.round(clip.progress)}%</div>}

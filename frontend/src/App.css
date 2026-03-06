@@ -319,6 +319,35 @@ button:disabled {
   border-color: #ff6666;
 }
 
+.fine-cut-toggle {
+  background: #222;
+  border: 1px solid #444;
+  color: #888;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.fine-cut-toggle:hover {
+  border-color: #666;
+  color: #ccc;
+}
+
+.fine-cut-toggle.active {
+  background: #333;
+  border-color: #00cc66;
+  color: #00cc66;
+}
+
+.fine-cut-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .clip-type-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
