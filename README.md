@@ -38,8 +38,6 @@ Ensure you have [Docker](https://www.docker.com/) and [Docker Compose](https://d
    - Frontend: `http://localhost:3000`
    - Backend: `http://localhost:8000`
 
-**Note for Remote Access:** By default, the frontend is built to communicate with `localhost:8000`. If you are running Docker on a separate server, update the `VITE_API_BASE` build argument in `docker-compose.yml` to your server's IP address and rebuild the container.
-
 ### Option 2: Manual Installation (Windows/Linux)
 
 #### Prerequisites
@@ -83,6 +81,39 @@ Ensure you have [Docker](https://www.docker.com/) and [Docker Compose](https://d
    npm run dev
    ```
 4. Access the frontend at `http://localhost:5173`.
+
+---
+
+## Local Network Access
+
+By default, the application is configured for `localhost`. To access it from other devices on your network (e.g., a phone or another computer), follow these steps:
+
+### Using Docker
+1. Find your computer's local IP address (e.g., `192.168.1.138`).
+   - **Windows**: Run `ipconfig` in PowerShell.
+   - **Linux/Mac**: Run `hostname -I` or `ifconfig`.
+2. Open `docker-compose.yml` and update the `VITE_API_BASE` build argument for the frontend:
+   ```yaml
+   args:
+     - VITE_API_BASE=http://<YOUR_LOCAL_IP>:8000
+   ```
+3. Rebuild and restart the containers:
+   ```bash
+   docker-compose up --build
+   ```
+4. Access the app on any device using `http://<YOUR_LOCAL_IP>:3000`.
+
+### Using Manual Installation
+1. Ensure the backend is listening on all interfaces (it is by default in `main.py`):
+   ```python
+   uvicorn.run(app, host="0.0.0.0", port=8000)
+   ```
+2. In the `frontend` directory, create a `.env.local` file:
+   ```env
+   VITE_API_BASE=http://<YOUR_LOCAL_IP>:8000
+   ```
+3. Restart the frontend development server.
+4. Access the app via `http://<YOUR_LOCAL_IP>:5173`.
 
 ---
 
