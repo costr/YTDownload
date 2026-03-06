@@ -321,7 +321,7 @@ function App() {
       };
       
       setClips(prev => {
-        const withBoth = prev.map(c => c.id === clipId ? { ...c, title: c.title, includeAudio: false, status: 'processing', progress: 0 } : c);
+        const withBoth = prev.map(c => c.id === clipId ? { ...c, title: c.title, includeAudio: false, status: 'processing' as const, progress: 0 } : c);
         return [...withBoth, audioClip];
       });
 
