@@ -424,7 +424,7 @@ function App() {
             disabled={loading}
             style={{flex: 1}}
           />
-          <button onClick={() => fetchInfo()} disabled={loading}>
+          <button onClick={() => fetchInfo()} disabled={loading} title="Analyze the provided URL to fetch video details, playlists, or channel information.">
             {loading ? 'Loading...' : 'Fetch Video'}
           </button>
         </div>
@@ -461,20 +461,22 @@ function App() {
               )}
 
               <div className="controls-overlay">
-                <button onClick={() => {
-                   const time = getCurrentTime();
-                   const last = clips[clips.length - 1];
-                   if (clips.length > 0 && !last.end && last.status === 'idle') {
-                      updateClip(last.id, 'end', time);
-                   } else {
-                      setClips([...clips, { 
-                        id: Math.random().toString(36).substr(2, 9), 
-                        title: `Clip ${clips.length + 1}`,
-                        start: time, end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 
-                      }]);
-                   }
-
-                }}>
+                <button 
+                  onClick={() => {
+                    const time = getCurrentTime();
+                    const last = clips[clips.length - 1];
+                    if (clips.length > 0 && !last.end && last.status === 'idle') {
+                        updateClip(last.id, 'end', time);
+                    } else {
+                        setClips([...clips, { 
+                          id: Math.random().toString(36).substr(2, 9), 
+                          title: `Clip ${clips.length + 1}`,
+                          start: time, end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 
+                        }]);
+                    }
+                  }}
+                  title="Mark current player time as start or end of a clip. Automatically creates a new clip if none are pending."
+                >
                   <Clock size={16} style={{marginRight: '5px'}} />
                   Mark Current Time
                 </button>
@@ -488,6 +490,7 @@ function App() {
                       placeholder="Search transcript..."
                       value={transcriptSearch}
                       onChange={(e) => setTranscriptSearch(e.target.value)}
+                      title="Search for keywords within the video transcript to jump to specific moments."
                     />
                   </div>
                 )}
@@ -499,7 +502,7 @@ function App() {
                     .filter(line => line.text.toLowerCase().includes(transcriptSearch.toLowerCase()))
                     .slice(0, 15)
                     .map((line, i) => (
-                      <div key={i} className="transcript-item" onClick={() => playerRef.current?.seekTo(line.start, true)}>
+                      <div key={i} className="transcript-item" onClick={() => playerRef.current?.seekTo(line.start, true)} title={`Seek player to ${formatTime(line.start)}`}>
                         <span className="transcript-time">{formatTime(line.start)}</span>
                         <span className="transcript-text">{line.text}</span>
                       </div>
@@ -520,19 +523,31 @@ function App() {
                     </select>
                   </div>
                   <div style={{display: 'flex', gap: '0.5rem'}}>
-                    <button onClick={() => {
-                      const id = Math.random().toString(36).substr(2, 9);
-                      const newClip: Clip = { id, title: activeInfo.title + " (Full Video)", url: activeInfo.original_url, start: '00:00', end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 };
-                      setClips(prev => [...prev, newClip]);
-                      // Small timeout to let state update, then start
-                      setTimeout(() => startDownload(id), 50);
-                    }} style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}><Video size={16}/> Queue Full Video</button>
-                    <button onClick={() => {
-                      const id = Math.random().toString(36).substr(2, 9);
-                      const newClip: Clip = { id, title: activeInfo.title + " (Full Audio)", url: activeInfo.original_url, start: '00:00', end: '', includeVideo: false, includeAudio: true, precise: false, status: 'idle', progress: 0 };
-                      setClips(prev => [...prev, newClip]);
-                      setTimeout(() => startDownload(id), 50);
-                    }} style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}><Music size={16}/> Queue Full Audio</button>
+                    <button 
+                      onClick={() => {
+                        const id = Math.random().toString(36).substr(2, 9);
+                        const newClip: Clip = { id, title: activeInfo.title + " (Full Video)", url: activeInfo.original_url, start: '00:00', end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 };
+                        setClips(prev => [...prev, newClip]);
+                        // Small timeout to let state update, then start
+                        setTimeout(() => startDownload(id), 50);
+                      }} 
+                      style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}
+                      title="Queue the entire video for download in the highest available quality."
+                    >
+                      <Video size={16}/> Queue Full Video
+                    </button>
+                    <button 
+                      onClick={() => {
+                        const id = Math.random().toString(36).substr(2, 9);
+                        const newClip: Clip = { id, title: activeInfo.title + " (Full Audio)", url: activeInfo.original_url, start: '00:00', end: '', includeVideo: false, includeAudio: true, precise: false, status: 'idle', progress: 0 };
+                        setClips(prev => [...prev, newClip]);
+                        setTimeout(() => startDownload(id), 50);
+                      }} 
+                      style={{background: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem'}}
+                      title="Queue the entire video as a high-quality MP3 audio file."
+                    >
+                      <Music size={16}/> Queue Full Audio
+                    </button>
                   </div>
                 </div>
               </div>
@@ -542,7 +557,7 @@ function App() {
                   <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#888', marginBottom: '0.5rem', fontSize: '0.9rem'}}><List size={16}/> Suggested Chapters</div>
                   <div className="suggestions-container">
                     {activeInfo.chapters.map((chapter, i) => (
-                      <div key={i} className="suggestion-chip" onClick={() => addSuggestionAsClip(chapter)}>{chapter.title}</div>
+                      <div key={i} className="suggestion-chip" onClick={() => addSuggestionAsClip(chapter)} title={`Add "${chapter.title}" as a clip to the queue`}>{chapter.title}</div>
                     ))}
                   </div>
                 </div>
@@ -558,22 +573,32 @@ function App() {
           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
             <h2 style={{margin: 0}}>{info.title} (Playlist)</h2>
             <div style={{display: 'flex', gap: '0.5rem'}}>
-              <button onClick={() => selectedPlaylistIds.length === info.entries?.length ? setSelectedPlaylistIds([]) : setSelectedPlaylistIds(info.entries?.map(e => e.id) || [])} style={{background: '#333', color: 'white'}}>
+              <button 
+                onClick={() => selectedPlaylistIds.length === info.entries?.length ? setSelectedPlaylistIds([]) : setSelectedPlaylistIds(info.entries?.map(e => e.id) || [])} 
+                style={{background: '#333', color: 'white'}}
+                title="Select or deselect all items in this playlist."
+              >
                 {selectedPlaylistIds.length === info.entries?.length ? 'Deselect All' : 'Select All'}
               </button>
               {selectedPlaylistIds.length > 0 && (
-                <button onClick={() => {
-                  const newClips: Clip[] = [];
-                  const existingUrls = new Set(clips.map(c => c.url).filter(Boolean));
-                  info.entries?.forEach(entry => { 
-                    if (selectedPlaylistIds.includes(entry.id) && !existingUrls.has(entry.url)) {        
-                      newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 }); 
-                    }
-                  });
+                <button 
+                  onClick={() => {
+                    const newClips: Clip[] = [];
+                    const existingUrls = new Set(clips.map(c => c.url).filter(Boolean));
+                    info.entries?.forEach(entry => { 
+                      if (selectedPlaylistIds.includes(entry.id) && !existingUrls.has(entry.url)) {        
+                        newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 }); 
+                      }
+                    });
 
-                  setClips([...clips, ...newClips]);
-                  setSelectedPlaylistIds([]);
-                }} style={{background: '#ff0000'}}>Add {selectedPlaylistIds.length} to Queue</button>
+                    setClips([...clips, ...newClips]);
+                    setSelectedPlaylistIds([]);
+                  }} 
+                  style={{background: '#ff0000'}}
+                  title="Add all selected playlist items to the download queue."
+                >
+                  Add {selectedPlaylistIds.length} to Queue
+                </button>
               )}
             </div>
           </div>
@@ -594,23 +619,36 @@ function App() {
           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
             <h2 style={{margin: 0}}>{info.title}</h2>
             {selectedPlaylistIds.length > 0 && (
-              <button onClick={() => {
-                const newClips: Clip[] = [];
-                const existingUrls = new Set(clips.map(c => c.url).filter(Boolean));
-                const sourceEntries = browsingPlaylist ? browsingPlaylist.entries : channelEntries;
-                sourceEntries?.forEach(entry => { 
-                  if (selectedPlaylistIds.includes(entry.id) && !existingUrls.has(entry.url)) {
-                    newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 }); 
-                  }
-                });
-                setClips([...clips, ...newClips]);
-                setSelectedPlaylistIds([]);
-              }} style={{background: '#ff0000'}}>Add {selectedPlaylistIds.length} to Queue</button>
+              <button 
+                onClick={() => {
+                  const newClips: Clip[] = [];
+                  const existingUrls = new Set(clips.map(c => c.url).filter(Boolean));
+                  const sourceEntries = browsingPlaylist ? browsingPlaylist.entries : channelEntries;
+                  sourceEntries?.forEach(entry => { 
+                    if (selectedPlaylistIds.includes(entry.id) && !existingUrls.has(entry.url)) {
+                      newClips.push({ id: Math.random().toString(36).substr(2, 9), title: entry.title, url: entry.url, start: '00:00', end: '', includeVideo: true, includeAudio: false, precise: false, status: 'idle', progress: 0 }); 
+                    }
+                  });
+                  setClips([...clips, ...newClips]);
+                  setSelectedPlaylistIds([]);
+                }} 
+                style={{background: '#ff0000'}}
+                title="Add all selected channel items to the download queue."
+              >
+                Add {selectedPlaylistIds.length} to Queue
+              </button>
             )}
           </div>
           <div className="channel-tabs">
             {info.tabs?.map(tab => (
-              <button key={tab} className={`tab-btn ${activeTab === tab ? 'active' : ''}`} onClick={() => { setActiveTab(tab); setBrowsingPlaylist(null); }}>{tab}</button>
+              <button 
+                key={tab} 
+                className={`tab-btn ${activeTab === tab ? 'active' : ''}`} 
+                onClick={() => { setActiveTab(tab); setBrowsingPlaylist(null); }}
+                title={`Switch to the ${tab} tab`}
+              >
+                {tab}
+              </button>
             ))}
           </div>
           <div style={{marginTop: '1.5rem'}}>
@@ -623,18 +661,22 @@ function App() {
               <>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #333', paddingBottom: '0.5rem'}}>
                   <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
-                    <button onClick={() => setBrowsingPlaylist(null)} className="icon-btn" style={{backgroundColor: '#333', borderRadius: '4px'}}><ArrowLeft size={18}/></button>
+                    <button onClick={() => setBrowsingPlaylist(null)} className="icon-btn" style={{backgroundColor: '#333', borderRadius: '4px'}} title="Return to channel view"><ArrowLeft size={18}/></button>
                     <h3 style={{margin: 0}}>{browsingPlaylist.title} (Playlist)</h3>
                   </div>
-                  <button onClick={() => {
-                    const sectionIds = browsingPlaylist.entries?.map(e => e.id) || [];
-                    const allSelected = sectionIds.every(id => selectedPlaylistIds.includes(id));
-                    if (allSelected) {
-                      setSelectedPlaylistIds(selectedPlaylistIds.filter(id => !sectionIds.includes(id)));
-                    } else {
-                      setSelectedPlaylistIds([...new Set([...selectedPlaylistIds, ...sectionIds])]);
-                    }
-                  }} style={{background: '#333', fontSize: '0.75rem', padding: '4px 10px'}}>
+                  <button 
+                    onClick={() => {
+                      const sectionIds = browsingPlaylist.entries?.map(e => e.id) || [];
+                      const allSelected = sectionIds.every(id => selectedPlaylistIds.includes(id));
+                      if (allSelected) {
+                        setSelectedPlaylistIds(selectedPlaylistIds.filter(id => !sectionIds.includes(id)));
+                      } else {
+                        setSelectedPlaylistIds([...new Set([...selectedPlaylistIds, ...sectionIds])]);
+                      }
+                    }} 
+                    style={{background: '#333', fontSize: '0.75rem', padding: '4px 10px'}}
+                    title="Select or deselect all items in this playlist."
+                  >
                     {(browsingPlaylist.entries?.every(e => selectedPlaylistIds.includes(e.id))) ? 'Deselect All' : 'Select All'}
                   </button>
                 </div>
@@ -644,10 +686,10 @@ function App() {
                       <div className="channel-thumb-wrapper">
                         {entry.thumbnail && <img src={entry.thumbnail} alt="" />}
                         <div className="channel-card-overlay">
-                          <button className="overlay-btn select-btn" onClick={() => selectedPlaylistIds.includes(entry.id) ? setSelectedPlaylistIds(selectedPlaylistIds.filter(id => id !== entry.id)) : setSelectedPlaylistIds([...selectedPlaylistIds, entry.id])}>
+                          <button className="overlay-btn select-btn" title="Add to selection" onClick={() => selectedPlaylistIds.includes(entry.id) ? setSelectedPlaylistIds(selectedPlaylistIds.filter(id => id !== entry.id)) : setSelectedPlaylistIds([...selectedPlaylistIds, entry.id])}>
                             {selectedPlaylistIds.includes(entry.id) ? <CheckSquare size={18}/> : <Plus size={18}/>}
                           </button>
-                          <button className="overlay-btn inspect-btn" onClick={() => { fetchInfo(entry.url); window.scrollTo({ top: 0, behavior: 'smooth' }); }}><Eye size={18} /></button>
+                          <button className="overlay-btn inspect-btn" title="Inspect Video" onClick={() => { fetchInfo(entry.url); window.scrollTo({ top: 0, behavior: 'smooth' }); }}><Eye size={18} /></button>
                         </div>
                         {selectedPlaylistIds.includes(entry.id) && <div className="selection-badge"><Check size={14} color="white" /></div>}
                       </div>
@@ -692,6 +734,7 @@ function App() {
                               ) : (
                                 <button 
                                   className="overlay-btn select-btn" 
+                                  title="Add to selection"
                                   onClick={() => selectedPlaylistIds.includes(entry.id) ? setSelectedPlaylistIds(selectedPlaylistIds.filter(id => id !== entry.id)) : setSelectedPlaylistIds([...selectedPlaylistIds, entry.id])}
                                 >
                                   {selectedPlaylistIds.includes(entry.id) ? <CheckSquare size={18}/> : <Plus size={18}/>}
@@ -717,7 +760,12 @@ function App() {
                     {!loadingMore && channelEntries.length === 0 && <div style={{textAlign: 'center', padding: '3rem', color: '#666'}}>No {activeTab} found.</div>}
                     {hasMore && channelEntries.length > 0 && (
                       <div style={{textAlign: 'center', marginTop: '2rem'}}>
-                        <button onClick={() => fetchTabEntries(activeTab, channelOffset)} disabled={loadingMore} style={{background: '#333', minWidth: '200px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'}}>
+                        <button 
+                          onClick={() => fetchTabEntries(activeTab, channelOffset)} 
+                          disabled={loadingMore} 
+                          style={{background: '#333', minWidth: '200px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'}}
+                          title="Fetch additional items from this channel tab."
+                        >
                           {loadingMore ? <><Loader2 size={16} className="spinning" /> Fetching...</> : 'Load More'}
                         </button>
                       </div>
@@ -737,9 +785,9 @@ function App() {
             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
               <h3 style={{margin: 0}}>Download Queue ({clips.length})</h3>
               <div style={{display: 'flex', gap: '0.5rem'}}>
-                <button onClick={() => clips.filter(c => c.status === 'idle').forEach(c => startDownload(c.id))} className="icon-btn" style={{backgroundColor: '#ff0000', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Start All"><Download size={14}/> Start All</button>
-                <button onClick={() => setClips(clips.filter(c => c.status !== 'completed' && c.status !== 'error'))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Clear Finished"><Eraser size={14}/> Clear Done</button>
-                <button onClick={() => setClips([])} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Clear Entire Queue"><Trash2 size={14}/> Clear Queue</button>
+                <button onClick={() => clips.filter(c => c.status === 'idle').forEach(c => startDownload(c.id))} className="icon-btn" style={{backgroundColor: '#ff0000', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Start all pending downloads in the queue."><Download size={14}/> Start All</button>
+                <button onClick={() => setClips(clips.filter(c => c.status !== 'completed' && c.status !== 'error'))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Remove finished and failed items from the list."><Eraser size={14}/> Clear Done</button>
+                <button onClick={() => setClips([])} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Empty the entire download queue."><Trash2 size={14}/> Clear Queue</button>
                 <button onClick={() => setClips(clips.map(c => ({ ...c, includeVideo: true, includeAudio: false })))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Set all to Video"><Video size={14}/> All</button>
                 <button onClick={() => setClips(clips.map(c => ({ ...c, includeVideo: false, includeAudio: true })))} className="icon-btn" style={{backgroundColor: '#444', borderRadius: '6px', padding: '0.5rem 0.75rem', width: 'auto', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', height: 'auto'}} title="Set all to Audio"><Music size={14}/> All</button>
               </div>
@@ -785,17 +833,17 @@ function App() {
                         {clip.precise ? "Fine Cut" : "Rough Cut"}
                       </button>
                     )}
-                    {clip.status === 'idle' && <button onClick={() => startDownload(clip.id)} style={{background: '#ff0000', padding: '6px 12px', fontSize: '0.85rem'}}>Start</button>}
-                    {clip.status === 'queued' && <div className="status-tag status-queued"><Clock size={12} style={{marginRight: '6px'}}/> Waiting...</div>}
-                    {clip.status === 'processing' && <div className="status-tag status-processing"><Loader2 size={12} className="spinning" style={{marginRight: '6px'}}/> {Math.round(clip.progress)}%</div>}
-                    {clip.status === 'completed' && <div className="status-tag status-completed"><CheckCircle size={12} style={{marginRight: '6px'}}/> Finished</div>}
+                    {clip.status === 'idle' && <button onClick={() => startDownload(clip.id)} style={{background: '#ff0000', padding: '6px 12px', fontSize: '0.85rem'}} title="Begin downloading this clip.">Start</button>}
+                    {clip.status === 'queued' && <div className="status-tag status-queued" title="This clip is in the queue and will start shortly."><Clock size={12} style={{marginRight: '6px'}}/> Waiting...</div>}
+                    {clip.status === 'processing' && <div className="status-tag status-processing" title="The clip is currently being downloaded or processed by the server."><Loader2 size={12} className="spinning" style={{marginRight: '6px'}}/> {Math.round(clip.progress)}%</div>}
+                    {clip.status === 'completed' && <div className="status-tag status-completed" title="The download is finished and the file has been saved to your computer."><CheckCircle size={12} style={{marginRight: '6px'}}/> Finished</div>}
                     {clip.status === 'error' && (
                        <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
-                         <div className="status-tag status-error"><AlertCircle size={12}/> Error</div>
-                         <button onClick={() => startDownload(clip.id)} style={{background: '#444', padding: '4px 8px', fontSize: '0.7rem', borderRadius: '4px'}}>Retry</button>
+                         <div className="status-tag status-error" title="An error occurred during download. Click Retry to try again."><AlertCircle size={12}/> Error</div>
+                         <button onClick={() => startDownload(clip.id)} style={{background: '#444', padding: '4px 8px', fontSize: '0.7rem', borderRadius: '4px'}} title="Re-attempt the download for this clip.">Retry</button>
                        </div>
                     )}
-                    <button onClick={() => removeClip(clip.id)} className="icon-btn" style={{color: '#ff4444'}}><Trash2 size={18}/></button>
+                    <button onClick={() => removeClip(clip.id)} className="icon-btn" style={{color: '#ff4444'}} title="Remove this clip from the queue."><Trash2 size={18}/></button>
                   </div>
                 </div>
                 {clip.status === 'processing' && <div className="progress-container"><div className="progress-bar" style={{width: `${clip.progress}%`}}></div></div>}
