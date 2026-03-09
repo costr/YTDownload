@@ -467,6 +467,54 @@ def get_video_info(request: VideoRequest):
             tabs = ["Albums", "Singles & EPs", "Videos", "Playlists"] if is_music else ["Videos", "Shorts", "Streams", "Playlists"]
             return {"is_channel": True, "is_music": is_music, "title": channel_title, "tabs": tabs, "active_tab": "Albums" if is_music else "Videos", "original_url": request.url}
 
+        # Check if it's a watch URL with a playlist
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(request.url)
+        qs = parse_qs(parsed.query)
+        video_id = qs.get('v', [None])[0]
+        playlist_id = qs.get('list', [None])[0]
+
+        if video_id and playlist_id:
+            print(f"DEBUG: Combined watch+playlist URL detected. Video: {video_id}, Playlist: {playlist_id}")
+            # 1. Fetch full video metadata
+            ydl_opts_video = {'quiet': True, 'extract_flat': False, 'noplaylist': True}
+            if not is_music:
+                ydl_opts_video.update({
+                    'writesubtitles': True, 'writeautomaticsub': True,
+                    'subtitleslangs': ['en.*', 'en', 'en-US', 'en-GB', '.*']
+                })
+            
+            with yt_dlp.YoutubeDL(ydl_opts_video) as ydl:
+                video_res = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            
+            # 2. Fetch playlist entries (flat)
+            ydl_opts_pl = {'quiet': True, 'extract_flat': 'in_playlist'}
+            with yt_dlp.YoutubeDL(ydl_opts_pl) as ydl:
+                playlist_res = ydl.extract_info(f"https://www.youtube.com/playlist?list={playlist_id}", download=False)
+            
+            entries = []
+            for entry in playlist_res.get('entries', []):
+                if not entry or not entry.get('id') or entry.get('title') == '[Private video]': continue
+                entries.append({
+                    'title': entry.get('title'),
+                    'url': f"https://www.youtube.com/watch?v={entry.get('id')}&list={playlist_id}",
+                    'id': entry.get('id'),
+                    'thumbnail': entry.get('thumbnail') or (entry.get('thumbnails')[0].get('url') if entry.get('thumbnails') else None),
+                    'is_music': is_music
+                })
+            
+            return {
+                "is_playlist": True, "is_channel": False, "is_music": is_music,
+                "title": video_res.get('title'), "playlist_title": playlist_res.get('title'),
+                "entries": entries, "original_url": request.url,
+                # Video metadata
+                "artist": video_res.get('artist') or video_res.get('uploader'), "album": video_res.get('album'),
+                "duration": video_res.get('duration'), "thumbnail": video_res.get('thumbnail'),
+                "formats": [{'format_id': f['format_id'], 'resolution': f"{f.get('height')}p", 'ext': f.get('ext', 'mp4')} for f in video_res.get('formats', []) if f.get('height') and f.get('height') >= 360],
+                "chapters": [{'title': c.get('title'), 'start': c.get('start_time'), 'end': c.get('end_time')} for c in (video_res.get('chapters') or [])],
+                "heatmap": video_res.get('heatmap') if not is_music else None, "transcript": []
+            }
+
         ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'noplaylist': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             result = ydl.extract_info(request.url, download=False)

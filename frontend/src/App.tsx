@@ -419,9 +419,9 @@ function App() {
     }
   };
 
-  const activeInfo = (selectedVideoInfo && !selectedVideoInfo.is_playlist && !selectedVideoInfo.is_channel) 
+  const activeInfo = (selectedVideoInfo && !selectedVideoInfo.is_channel) 
     ? selectedVideoInfo 
-    : (info && !info.is_channel && !info.is_playlist ? info : null);
+    : (info && !info.is_channel ? info : null);
 
   return (
     <div className="app-container">
@@ -444,7 +444,7 @@ function App() {
         </div>
       )}
 
-      {activeInfo && !inspectingVideo && (
+      {activeInfo && !inspectingVideo && activeInfo.formats && activeInfo.formats.length > 0 && (
         <div className="card">
           <div className="video-section">
             <div>
@@ -554,9 +554,14 @@ function App() {
           </div>
           <div className="playlist-entries">
             {info.entries?.map(entry => (
-              <div key={entry.id} className={`playlist-item ${selectedPlaylistIds.includes(entry.id) ? 'selected' : ''}`} onClick={() => selectedPlaylistIds.includes(entry.id) ? setSelectedPlaylistIds(selectedPlaylistIds.filter(id => id !== entry.id)) : setSelectedPlaylistIds([...selectedPlaylistIds, entry.id])}>
-                {selectedPlaylistIds.includes(entry.id) ? <CheckSquare size={18} color="#ff0000"/> : <Square size={18}/>}
-                <span>{entry.title}</span>
+              <div key={entry.id} className={`playlist-item ${selectedPlaylistIds.includes(entry.id) ? 'selected' : ''}`} style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, cursor: 'pointer'}} onClick={() => selectedPlaylistIds.includes(entry.id) ? setSelectedPlaylistIds(selectedPlaylistIds.filter(id => id !== entry.id)) : setSelectedPlaylistIds([...selectedPlaylistIds, entry.id])}>
+                  {selectedPlaylistIds.includes(entry.id) ? <CheckSquare size={18} color="#ff0000"/> : <Square size={18}/>}
+                  <span>{entry.title}</span>
+                </div>
+                <button className="icon-btn" title="Inspect Video" onClick={(e) => { e.stopPropagation(); fetchInfo(entry.url); window.scrollTo({ top: 0, behavior: 'smooth' }); }} style={{padding: '4px', opacity: 0.6}}>
+                  <Eye size={18} />
+                </button>
               </div>
             ))}
           </div>
