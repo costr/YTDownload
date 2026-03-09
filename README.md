@@ -111,9 +111,36 @@ Paste a YouTube or YouTube Music URL (Video, Song, Album, Playlist, or Channel) 
 
 ### 5. Channel/Artist Browsing
 - If you enter a channel or artist URL, you can browse through their releases.
-- For YouTube Music, use the **Albums** or **Singles** tabs to find collections.
+- For YouTube Music, use the **Albums** or **Singles & EPs** tabs to find collections.
 - Use the **Inspect** (Eye icon) to view details of a specific video or **Plus** icon to add it to your queue.
 - Support for "Videos", "Shorts", "Streams", and "Playlists" tabs in channels.
+- **Handle Support:** Paste URLs with handles (e.g., `music.youtube.com/@WetLeg`) for automatic resolution.
+
+---
+
+## How to Update the Application
+
+To ensure you have the latest features and bug fixes, follow these steps:
+
+### Option 1: Docker (Recommended)
+1. Stop the running containers: `docker-compose down`
+2. Pull the latest code: `git pull`
+3. Rebuild and start the application: `docker-compose up --build -d`
+
+### Option 2: Manual Update
+1. Pull the latest code: `git pull`
+2. Update backend dependencies:
+   ```bash
+   cd backend
+   .\venv\Scripts\activate # Windows
+   pip install -r requirements.txt
+   ```
+3. Update frontend dependencies:
+   ```bash
+   cd ../frontend
+   npm install
+   ```
+4. Restart both the backend (`python main.py`) and frontend (`npm run dev`) processes.
 
 ---
 
