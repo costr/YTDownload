@@ -280,6 +280,12 @@ def get_video_info(request: VideoRequest):
                     print(f"DEBUG: Resolved channel_id: {channel_id}")
                 except Exception as e:
                     print(f"DEBUG: Handle resolution failed: {e}")
+            
+            # YouTube Music sometimes uses browse IDs starting with MPAD... 
+            # ytmusicapi.get_artist() expects the raw UC... ID.
+            if channel_id.startswith('MPAD'):
+                channel_id = channel_id.replace('MPAD', '', 1)
+                print(f"DEBUG: Stripped MPAD prefix, new channel_id: {channel_id}")
 
             if is_music:
                 try:
@@ -288,10 +294,8 @@ def get_video_info(request: VideoRequest):
                     
                     if norm_tab in ["Albums", "Singles", "Singles & EPs"]:
                         artist = ytmusic.get_artist(channel_id)
-                        print(f"DEBUG: Artist keys: {list(artist.keys())}", flush=True)
                         is_singles_mode = "Singles" in norm_tab
                         
-                        # Collect everything from both keys
                         raw_candidates = []
                         for k in ["singles", "albums"]:
                             tab_key = next((key for key in artist.keys() if key.lower() == k), None)
@@ -300,16 +304,14 @@ def get_video_info(request: VideoRequest):
                             data = artist[tab_key]
                             items = data.get('results', [])
                             if 'browseId' in data and 'params' in data:
-                                try:
-                                    print(f"DEBUG: Fetching full {k} list...", flush=True)
-                                    items += ytmusic.get_artist_albums(data['browseId'], data['params'])
+                                try: items += ytmusic.get_artist_albums(data['browseId'], data['params'])
                                 except: pass
                             
                             for r in items:
                                 r['_src'] = k
                                 raw_candidates.append(r)
 
-                        results = []
+                        results_all = []
                         seen = set()
                         for r in raw_candidates:
                             rid = r.get('browseId') or r.get('playlistId')
@@ -317,21 +319,27 @@ def get_video_info(request: VideoRequest):
                             
                             rtype = (r.get('type') or "").lower()
                             rtitle = (r.get('title') or "").lower()
-                            is_s = any(x in rtype for x in ["single", "ep"]) or any(x in rtitle for x in ["single", "ep"])
+                            
+                            is_s = any(x in rtype for x in ["single", "ep"]) or \
+                                   any(x in rtitle for x in [" - single", "(single)", " - ep", "(ep)"]) or \
+                                   rtitle.endswith(" single") or rtitle.endswith(" ep")
                             
                             if is_singles_mode:
-                                # For Singles: include anything from 'singles' source OR anything marked single/ep
                                 if r['_src'] == "singles" or is_s:
-                                    results.append(r)
+                                    results_all.append(r)
                                     seen.add(rid)
                             else:
-                                # For Albums: include from 'albums' source that are NOT singles/eps
                                 if r['_src'] == "albums" and not is_s:
-                                    results.append(r)
+                                    results_all.append(r)
                                     seen.add(rid)
                         
+                        start_idx = request.offset or 0
+                        page_size = 15
+                        paged_raw = results_all[start_idx : start_idx + page_size]
+                        next_offset = (start_idx + page_size) if len(results_all) > start_idx + page_size else None
+
                         entries = []
-                        for r in results:
+                        for r in paged_raw:
                             p_id = r.get('browseId') or r.get('playlistId')
                             final_id = r.get('audioPlaylistId') or r.get('playlistId') or p_id
                             entries.append({
@@ -339,32 +347,84 @@ def get_video_info(request: VideoRequest):
                                 'url': f"https://music.youtube.com/playlist?list={final_id}",
                                 'id': p_id,
                                 'thumbnail': r.get('thumbnails', [{}])[-1].get('url') if r.get('thumbnails') else None,
-                                'is_music': True,
-                                'is_playlist': True
+                                'is_music': True, 'is_playlist': True
                             })
-                        print(f"DEBUG: Returning {len(entries)} entries for {norm_tab}", flush=True)
-                        return {"entries": entries, "next_offset": None, "is_music": True}
+                        return {"entries": entries, "next_offset": next_offset, "is_music": True}
                     
                     elif norm_tab == "Videos":
-                        # For videos on music channels, we still use standard YT channel logic
-                        tab_url = f"https://www.youtube.com/channel/{channel_id}/videos"
+                        artist = ytmusic.get_artist(channel_id)
+                        entries = []
                         start = (request.offset or 0) + 1
                         end = start + 14
-                        ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'playlist_items': f"{start}:{end}"}
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            res = ydl.extract_info(tab_url, download=False)
-                            entries = []
-                            for entry in res.get('entries', []):
-                                if not entry or not entry.get('id'): continue
-                                entries.append({
-                                    'title': entry.get('title'),
-                                    'url': f"https://music.youtube.com/watch?v={entry.get('id')}",
-                                    'id': entry.get('id'),
-                                    'thumbnail': entry.get('thumbnail') or (entry.get('thumbnails')[0].get('url') if entry.get('thumbnails') else None),
-                                    'is_music': True,
-                                    'is_playlist': False
-                                })
-                            return {"entries": entries, "next_offset": end if len(entries) >= 15 else None, "is_music": True}
+                        
+                        if 'videos' in artist:
+                            v_data = artist['videos']
+                            b_id = v_data.get('browseId')
+                            if b_id:
+                                try:
+                                    pl_id = b_id[2:] if b_id.startswith('VL') else b_id
+                                    pl_url = f"https://www.youtube.com/playlist?list={pl_id}"
+                                    print(f"DEBUG: Fetching videos slice {start}-{end} via yt-dlp", flush=True)
+                                    with yt_dlp.YoutubeDL({'quiet': True, 'extract_flat': True, 'playlist_items': f"{start}:{end}"}) as ydl:
+                                        res = ydl.extract_info(pl_url, download=False)
+                                        results = res.get('entries', [])
+                                        for r in results:
+                                            v_id = r.get('videoId') or r.get('id')
+                                            if not v_id: continue
+                                            entries.append({
+                                                'title': r.get('title'),
+                                                'url': f"https://music.youtube.com/watch?v={v_id}",
+                                                'id': v_id,
+                                                'thumbnail': r.get('thumbnails', [{}])[-1].get('url') if r.get('thumbnails') else (r.get('thumbnail') if r.get('thumbnail') else None),
+                                                'is_music': True, 'is_playlist': False
+                                            })
+                                        # Once we've found a valid playlist ID for videos, we MUST return here
+                                        # even if entries is empty (end of list), to avoid falling through to the broken fallback.
+                                        print(f"DEBUG: Returning {len(entries)} entries from 'videos' key (Slice: {start}-{end})", flush=True)
+                                        return {"entries": entries, "next_offset": end if len(entries) >= 15 else None, "is_music": True}
+                                except Exception as e:
+                                    print(f"DEBUG: Paged fetch failed: {e}", flush=True)
+                                    # If the playlist fetch itself fails, we can fall through to fallback
+                            elif 'results' in v_data and v_data['results']:
+                                # If there's no browseId but we have initial results, and we are on the first page
+                                if start == 1:
+                                    for r in v_data['results']:
+                                        v_id = r.get('videoId')
+                                        if not v_id: continue
+                                        entries.append({
+                                            'title': r.get('title'),
+                                            'url': f"https://music.youtube.com/watch?v={v_id}",
+                                            'id': v_id,
+                                            'thumbnail': r.get('thumbnails', [{}])[-1].get('url') if r.get('thumbnails') else None,
+                                            'is_music': True, 'is_playlist': False
+                                        })
+                                    return {"entries": entries, "next_offset": None, "is_music": True}
+                        
+                        # Fallback logic only if we didn't find music-specific video playlist
+                        last_err = None
+                        for sub_tab in ["videos", "releases", "playlists"]:
+                            try:
+                                tab_url = f"https://www.youtube.com/channel/{channel_id}/{sub_tab}"
+                                ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'playlist_items': f"{start}:{end}"}
+                                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                    res = ydl.extract_info(tab_url, download=False)
+                                    tab_entries = res.get('entries', [])
+                                    if not tab_entries: continue
+                                    for entry in tab_entries:
+                                        if not entry or not entry.get('id'): continue
+                                        entries.append({
+                                            'title': entry.get('title'),
+                                            'url': f"https://music.youtube.com/watch?v={entry.get('id')}",
+                                            'id': entry.get('id'),
+                                            'thumbnail': entry.get('thumbnail') or (entry.get('thumbnails')[0].get('url') if entry.get('thumbnails') else None),
+                                            'is_music': True, 'is_playlist': False
+                                        })
+                                    return {"entries": entries, "next_offset": end if len(entries) >= 15 else None, "is_music": True}
+                            except Exception as e:
+                                last_err = e
+                                continue
+                        if last_err: raise last_err
+                        return {"entries": [], "next_offset": None, "is_music": True}
 
                     # Initial channel load
                     artist = ytmusic.get_artist(channel_id)

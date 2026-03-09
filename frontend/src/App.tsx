@@ -240,7 +240,7 @@ function App() {
         setChannelEntries(prev => [...prev, ...newEntries]);
       }
       setChannelOffset(res.data.next_offset || offset + newEntries.length);
-      setHasMore(newEntries.length === 15);
+      setHasMore(res.data.next_offset !== null && newEntries.length >= 15);
     } catch (err) {
       console.error("Failed to fetch tab entries", err);
     } finally {
