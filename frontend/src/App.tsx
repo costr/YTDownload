@@ -99,6 +99,7 @@ function App() {
   const [channelEntries, setChannelEntries] = useState<PlaylistEntry[]>([]);
   const [channelOffset, setChannelOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingInitialTab, setLoadingInitialTab] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
   const downloadedTaskIds = useRef<Set<string>>(new Set());
@@ -218,7 +219,14 @@ function App() {
 
   const fetchTabEntries = async (tabName: string, offset: number, reset: boolean = false) => {
     if (!info || !info.is_channel) return;
-    setLoadingMore(true);
+    
+    if (reset) {
+      setLoadingInitialTab(true);
+      setChannelEntries([]);
+    } else {
+      setLoadingMore(true);
+    }
+
     try {
       const res = await axios.post(`${API_BASE}/info`, { 
         url: info.original_url, 
@@ -236,6 +244,7 @@ function App() {
     } catch (err) {
       console.error("Failed to fetch tab entries", err);
     } finally {
+      setLoadingInitialTab(false);
       setLoadingMore(false);
     }
   };
@@ -636,46 +645,59 @@ function App() {
                     </button>
                   )}
                 </div>
-                <div className="channel-grid">
-                  {channelEntries.map(entry => (
-                    <div key={entry.id} className={`channel-card ${selectedPlaylistIds.includes(entry.id) ? 'selected' : ''}`}>
-                      <div className="channel-thumb-wrapper">
-                        {entry.thumbnail && <img src={entry.thumbnail} alt="" />}
-                        <div className="channel-card-overlay">
-                          {entry.is_playlist ? (
-                            <button className="overlay-btn select-btn" title="Queue Entire Collection" onClick={() => addPlaylistToQueue(entry.url, entry.title)}>
-                              <Plus size={18}/>
-                            </button>
-                          ) : (
-                            <button className="overlay-btn select-btn" onClick={() => selectedPlaylistIds.includes(entry.id) ? setSelectedPlaylistIds(selectedPlaylistIds.filter(id => id !== entry.id)) : setSelectedPlaylistIds([...selectedPlaylistIds, entry.id])}>
-                              {selectedPlaylistIds.includes(entry.id) ? <CheckSquare size={18}/> : <Plus size={18}/>}
-                            </button>
-                          )}
-                          {entry.is_playlist ? (
-                            <button className="overlay-btn inspect-btn" title="Browse Collection" onClick={() => {
-                                const type = activeTab === 'Albums' ? 'album' : activeTab === 'Singles' ? 'single' : 'playlist';
-                                fetchInfo(entry.url, true, false, type);
-                              }}>
-                              <LayoutList size={18} />
-                            </button>
-                          ) : (
-                            <button className="overlay-btn inspect-btn" onClick={() => { fetchInfo(entry.url); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-                              <Eye size={18} />
-                            </button>
-                          )}
-                        </div>
-                        {selectedPlaylistIds.includes(entry.id) && <div className="selection-badge"><Check size={14} color="white" /></div>}
-                      </div>
-                      <div className="channel-card-title">{entry.title}</div>
-                    </div>
-                  ))}
-                </div>
-                {hasMore && channelEntries.length > 0 && (
-                  <div style={{textAlign: 'center', marginTop: '2rem'}}>
-                    <button onClick={() => fetchTabEntries(activeTab, channelOffset)} disabled={loadingMore} style={{background: '#333', minWidth: '200px'}}>
-                      {loadingMore ? 'Fetching...' : 'Load More'}
-                    </button>
+
+                {loadingInitialTab ? (
+                  <div style={{textAlign: 'center', padding: '5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem'}}>
+                    <Loader2 size={40} className="spinning" color="#ff0000" />
+                    <div style={{color: '#888'}}>Loading {activeTab}...</div>
                   </div>
+                ) : channelEntries.length === 0 ? (
+                  <div style={{textAlign: 'center', padding: '5rem', color: '#888', border: '1px dashed #333', borderRadius: '8px'}}>
+                    No {activeTab.toLowerCase()} found for this channel.
+                  </div>
+                ) : (
+                  <>
+                    <div className="channel-grid">
+                      {channelEntries.map(entry => (
+                        <div key={entry.id} className={`channel-card ${selectedPlaylistIds.includes(entry.id) ? 'selected' : ''}`}>
+                          <div className="channel-thumb-wrapper">
+                            {entry.thumbnail && <img src={entry.thumbnail} alt="" />}
+                            <div className="channel-card-overlay">
+                              {entry.is_playlist ? (
+                                <button className="overlay-btn select-btn" title="Queue Entire Collection" onClick={() => addPlaylistToQueue(entry.url, entry.title)}>
+                                  <Plus size={18}/>
+                                </button>
+                              ) : (
+                                <button className="overlay-btn select-btn" onClick={() => selectedPlaylistIds.includes(entry.id) ? setSelectedPlaylistIds(selectedPlaylistIds.filter(id => id !== entry.id)) : setSelectedPlaylistIds([...selectedPlaylistIds, entry.id])}>
+                                  {selectedPlaylistIds.includes(entry.id) ? <CheckSquare size={18}/> : <Plus size={18}/>}
+                                </button>
+                              )}
+                              {entry.is_playlist ? (
+                                <button className="overlay-btn inspect-btn" title="Browse Collection" onClick={() => {
+                                  const type = activeTab === 'Albums' ? 'album' : activeTab === 'Singles & EPs' ? 'single' : 'playlist';
+                                  fetchInfo(entry.url, true, false, type);
+                                }}>                                  <LayoutList size={18} />
+                                </button>
+                              ) : (
+                                <button className="overlay-btn inspect-btn" onClick={() => { fetchInfo(entry.url); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                                  <Eye size={18} />
+                                </button>
+                              )}
+                            </div>
+                            {selectedPlaylistIds.includes(entry.id) && <div className="selection-badge"><Check size={14} color="white" /></div>}
+                          </div>
+                          <div className="channel-card-title">{entry.title}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {hasMore && (
+                      <div style={{textAlign: 'center', marginTop: '2rem'}}>
+                        <button onClick={() => fetchTabEntries(activeTab, channelOffset)} disabled={loadingMore} style={{background: '#333', minWidth: '200px'}}>
+                          {loadingMore ? 'Fetching...' : 'Load More'}
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}

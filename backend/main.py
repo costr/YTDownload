@@ -119,7 +119,7 @@ async def download_worker(task_id: str, request: DownloadRequest):
         # 1. Setup paths
         artist_folder = sanitize_path(request.artist or "Downloads")
         if request.audio_only:
-            sub_folder = sanitize_path(request.album or "Singles")
+            sub_folder = sanitize_path(request.album or "Singles & EPs")
         else:
             sub_folder = "Music Videos"
         
@@ -248,43 +248,105 @@ async def download_worker(task_id: str, request: DownloadRequest):
 
 @app.post("/info")
 def get_video_info(request: VideoRequest):
+    print(f"DEBUG: Received /info request for URL: {request.url}, Tab: {request.tab}")
     try:
         is_music = "music.youtube.com" in request.url
         is_watch = "watch?v=" in request.url or "youtu.be/" in request.url
         is_channel = not is_watch and ("/@" in request.url or "/channel/" in request.url or "/c/" in request.url or "/user/" in request.url or (is_music and "/channel/" in request.url) or (is_music and "/browse/MPAD" in request.url))
         
+        print(f"DEBUG: is_music={is_music}, is_watch={is_watch}, is_channel={is_channel}")
+        
         if is_channel:
-            clean_url = request.url.rstrip('/')
+            # Clean the URL and extract the identifier (handle or ID)
+            clean_url = request.url.split('?')[0].split('#')[0].rstrip('/')
             parts = clean_url.split('/')
-            channel_id = parts[-1]
-            if "/channel/" in clean_url: channel_id = parts[parts.index("channel") + 1]
             
+            # The identifier is usually the last part (e.g., @Artist or UC...)
+            # unless it's in the /channel/ID format
+            identifier = parts[-1]
+            if "/channel/" in clean_url:
+                identifier = parts[parts.index("channel") + 1]
+            
+            print(f"DEBUG: Identifier extracted: {identifier}")
+            
+            # Resolve the actual channel ID if it's a handle or other type
+            channel_id = identifier
+            if identifier.startswith('@') or "/c/" in clean_url or "/user/" in clean_url:
+                try:
+                    print(f"DEBUG: Resolving handle/vanity URL: {clean_url}")
+                    with yt_dlp.YoutubeDL({'quiet': True, 'extract_flat': True}) as ydl:
+                        res = ydl.extract_info(clean_url, download=False)
+                        channel_id = res.get('channel_id') or identifier
+                    print(f"DEBUG: Resolved channel_id: {channel_id}")
+                except Exception as e:
+                    print(f"DEBUG: Handle resolution failed: {e}")
+
             if is_music:
                 try:
-                    if request.tab in ["Albums", "Singles"]:
+                    norm_tab = request.tab.strip() if request.tab else ""
+                    print(f"DEBUG: Processing music tab '{norm_tab}' for channel {channel_id}", flush=True)
+                    
+                    if norm_tab in ["Albums", "Singles", "Singles & EPs"]:
                         artist = ytmusic.get_artist(channel_id)
+                        print(f"DEBUG: Artist keys: {list(artist.keys())}", flush=True)
+                        is_singles_mode = "Singles" in norm_tab
+                        
+                        # Collect everything from both keys
+                        raw_candidates = []
+                        for k in ["singles", "albums"]:
+                            tab_key = next((key for key in artist.keys() if key.lower() == k), None)
+                            if not tab_key: continue
+                            
+                            data = artist[tab_key]
+                            items = data.get('results', [])
+                            if 'browseId' in data and 'params' in data:
+                                try:
+                                    print(f"DEBUG: Fetching full {k} list...", flush=True)
+                                    items += ytmusic.get_artist_albums(data['browseId'], data['params'])
+                                except: pass
+                            
+                            for r in items:
+                                r['_src'] = k
+                                raw_candidates.append(r)
+
                         results = []
-                        if request.tab == "Albums" and 'albums' in artist:
-                            album_data = artist['albums']
-                            results = ytmusic.get_artist_albums(album_data['browseId'], album_data['params']) if 'browseId' in album_data and 'params' in album_data else album_data.get('results', [])
-                        elif request.tab == "Singles" and 'singles' in artist:
-                            single_data = artist['singles']
-                            results = ytmusic.get_artist_albums(single_data['browseId'], single_data['params']) if 'browseId' in single_data and 'params' in single_data else single_data.get('results', [])
+                        seen = set()
+                        for r in raw_candidates:
+                            rid = r.get('browseId') or r.get('playlistId')
+                            if not rid or rid in seen: continue
+                            
+                            rtype = (r.get('type') or "").lower()
+                            rtitle = (r.get('title') or "").lower()
+                            is_s = any(x in rtype for x in ["single", "ep"]) or any(x in rtitle for x in ["single", "ep"])
+                            
+                            if is_singles_mode:
+                                # For Singles: include anything from 'singles' source OR anything marked single/ep
+                                if r['_src'] == "singles" or is_s:
+                                    results.append(r)
+                                    seen.add(rid)
+                            else:
+                                # For Albums: include from 'albums' source that are NOT singles/eps
+                                if r['_src'] == "albums" and not is_s:
+                                    results.append(r)
+                                    seen.add(rid)
                         
                         entries = []
                         for r in results:
                             p_id = r.get('browseId') or r.get('playlistId')
-                            if not p_id: continue
+                            final_id = r.get('audioPlaylistId') or r.get('playlistId') or p_id
                             entries.append({
                                 'title': r.get('title'),
-                                'url': f"https://music.youtube.com/playlist?list={r.get('audioPlaylistId') or r.get('playlistId') or p_id}",
+                                'url': f"https://music.youtube.com/playlist?list={final_id}",
                                 'id': p_id,
                                 'thumbnail': r.get('thumbnails', [{}])[-1].get('url') if r.get('thumbnails') else None,
                                 'is_music': True,
                                 'is_playlist': True
                             })
+                        print(f"DEBUG: Returning {len(entries)} entries for {norm_tab}", flush=True)
                         return {"entries": entries, "next_offset": None, "is_music": True}
-                    elif request.tab == "Videos":
+                    
+                    elif norm_tab == "Videos":
+                        # For videos on music channels, we still use standard YT channel logic
                         tab_url = f"https://www.youtube.com/channel/{channel_id}/videos"
                         start = (request.offset or 0) + 1
                         end = start + 14
@@ -293,7 +355,7 @@ def get_video_info(request: VideoRequest):
                             res = ydl.extract_info(tab_url, download=False)
                             entries = []
                             for entry in res.get('entries', []):
-                                if not entry or not entry.get('id') or entry.get('title') == '[Private video]': continue
+                                if not entry or not entry.get('id'): continue
                                 entries.append({
                                     'title': entry.get('title'),
                                     'url': f"https://music.youtube.com/watch?v={entry.get('id')}",
@@ -304,19 +366,21 @@ def get_video_info(request: VideoRequest):
                                 })
                             return {"entries": entries, "next_offset": end if len(entries) >= 15 else None, "is_music": True}
 
+                    # Initial channel load
                     artist = ytmusic.get_artist(channel_id)
                     return {
-                        "is_channel": True, "is_music": True, "title": artist.get('name') or channel_id,
-                        "tabs": ["Albums", "Singles", "Videos"], "active_tab": "Albums", "original_url": request.url
+                        "is_channel": True, "is_music": True, "title": artist.get('name') or identifier,
+                        "tabs": ["Albums", "Singles & EPs", "Videos"], "active_tab": "Albums", "original_url": request.url
                     }
-                except Exception as e: print(f"Music browsing error: {e}")
+                except Exception as e:
+                    print(f"Music browsing error: {e}", flush=True)
+                    # If music browsing fails, we don't fall through to non-music logic for music URLs
+                    raise HTTPException(status_code=400, detail=f"Failed to load music channel: {str(e)}")
 
-            identifier_index = 3
-            if "/channel/" in clean_url: identifier_index = 4
-            base_url = "/".join(parts[:identifier_index + 1]) if len(parts) > identifier_index else clean_url
-
+            # Standard YouTube Channel Logic (non-music)
+            base_url = clean_url
             if request.tab:
-                yt_tab_map = {"Albums": "playlists", "Singles": "playlists", "Videos": "videos", "Playlists": "playlists", "Shorts": "shorts", "Streams": "streams"}
+                yt_tab_map = {"Albums": "playlists", "Singles": "playlists", "Singles & EPs": "playlists", "Videos": "videos", "Playlists": "playlists", "Shorts": "shorts", "Streams": "streams"}
                 tab_url = f"{base_url}/{yt_tab_map.get(request.tab, request.tab.lower())}"
                 start = (request.offset or 0) + 1
                 end = start + 14
@@ -340,7 +404,7 @@ def get_video_info(request: VideoRequest):
                 res = ydl.extract_info(base_url, download=False)
                 channel_title = res.get('channel') or res.get('uploader') or res.get('title') or base_url.split('/')[-1]
 
-            tabs = ["Albums", "Singles", "Videos", "Playlists"] if is_music else ["Videos", "Shorts", "Streams", "Playlists"]
+            tabs = ["Albums", "Singles & EPs", "Videos", "Playlists"] if is_music else ["Videos", "Shorts", "Streams", "Playlists"]
             return {"is_channel": True, "is_music": is_music, "title": channel_title, "tabs": tabs, "active_tab": "Albums" if is_music else "Videos", "original_url": request.url}
 
         ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'noplaylist': True}
