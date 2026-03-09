@@ -5,15 +5,16 @@ A modern web application for downloading YouTube videos, audio, and specific cli
 ## Features
 
 - **Video & Audio Downloads:** High-quality MP4 and MP3 (up to 320kbps) support.
-- **Dual Format Support:** Independently select Video, Audio, or both for every clip in the queue.
-- **YouTube Music Support:** Download songs, albums, and playlists directly from music.youtube.com with full metadata and album art.
-- **Precise Clipping:** Mark start and end times to download specific segments.
-- **Togglable Precision:** Choose between **Rough Cut** (fast, keyframe-accurate) and **Fine Cut** (precise, frame-accurate via re-encoding).
+- **YouTube Music Support:** Powered by `ytmusicapi` for pinpoint accuracy. Download songs, albums, and singles directly with full metadata and album art.
+- **Organized Music Library:** Automatically structures downloads into `{Artist}/{Album}/{Title}` on the server, perfect for **Plex** or **PlexAmp**.
+- **Album Art:** Automatically saves high-quality `cover.jpg` in album folders.
+- **Zipped Collections:** Download entire albums or singles as a single `.zip` file for easy local management.
+- **Precise Clipping:** Mark start and end times to download specific segments with frame-accurate precision.
 - **Channel & Playlist Browsing:** Search and select videos directly from channels and playlists.
 - **Transcript Search:** Find specific moments in a video using its transcript.
 - **Heatmap Visualization:** Identify the most replayed parts of a video.
 - **SponsorBlock Integration:** Automatically removes sponsors and non-music sections.
-- **User-Friendly UI:** Includes helpful tooltips for every control and floating status indicators.
+- **No Installation Required (Browser-based):** Runs in your browser with a Python backend.
 
 ---
 
@@ -38,11 +39,16 @@ Ensure you have [Docker](https://www.docker.com/) and [Docker Compose](https://d
    - Frontend: `http://localhost:3000`
    - Backend: `http://localhost:8000`
 
+**Library Persistence:** When using Docker, your music library is stored in a persistent volume named `library`. You can find the physical location on your host via `docker volume inspect ytdownloader_library`.
+
+**Note for Remote Access:** By default, the frontend is built to communicate with `localhost:8000`. If you are running Docker on a separate server, update the `VITE_API_BASE` build argument in `docker-compose.yml` to your server's IP address and rebuild the container.
+
 ### Option 2: Manual Installation (Windows/Linux)
 
 #### Prerequisites
 - **Python 3.10+**
 - **Node.js 18+**
+- **Deno:** Required by `yt-dlp` for JavaScript execution.
 - **FFmpeg:** Required for `yt-dlp` post-processing.
   - **Windows:** Download from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and add to your PATH.
   - **Linux:** `sudo apt install ffmpeg`
@@ -84,39 +90,6 @@ Ensure you have [Docker](https://www.docker.com/) and [Docker Compose](https://d
 
 ---
 
-## Local Network Access
-
-By default, the application is configured for `localhost`. To access it from other devices on your network (e.g., a phone or another computer), follow these steps:
-
-### Using Docker
-1. Find your computer's local IP address (e.g., `192.168.1.138`).
-   - **Windows**: Run `ipconfig` in PowerShell.
-   - **Linux/Mac**: Run `hostname -I` or `ifconfig`.
-2. Open `docker-compose.yml` and update the `VITE_API_BASE` build argument for the frontend:
-   ```yaml
-   args:
-     - VITE_API_BASE=http://<YOUR_LOCAL_IP>:8000
-   ```
-3. Rebuild and restart the containers:
-   ```bash
-   docker-compose up --build
-   ```
-4. Access the app on any device using `http://<YOUR_LOCAL_IP>:3000`.
-
-### Using Manual Installation
-1. Ensure the backend is listening on all interfaces (it is by default in `main.py`):
-   ```python
-   uvicorn.run(app, host="0.0.0.0", port=8000)
-   ```
-2. In the `frontend` directory, create a `.env.local` file:
-   ```env
-   VITE_API_BASE=http://<YOUR_LOCAL_IP>:8000
-   ```
-3. Restart the frontend development server.
-4. Access the app via `http://<YOUR_LOCAL_IP>:5173`.
-
----
-
 ## How to Use
 
 ### 1. Fetching a Video / Song
@@ -127,22 +100,18 @@ Paste a YouTube or YouTube Music URL (Video, Song, Album, Playlist, or Channel) 
 - You can manually adjust the timestamps in the **Download Queue**.
 - Use the **Suggested Chapters** section to quickly add segments based on the video's chapters.
 
-### 3. Precision Settings (Fine vs. Rough Cut)
-- For every clip, you can toggle between **Rough Cut** and **Fine Cut**.
-- **Rough Cut**: Keyframe-accurate. Fastest processing but might be +/- 1-2 seconds off.
-- **Fine Cut**: Frame-accurate. Uses re-encoding to match your exact timestamps. Takes slightly longer to process.
-
-### 4. Searching Transcripts
+### 3. Searching Transcripts
 - If the video has English captions, a search box will appear.
 - Type keywords to find specific lines. Clicking a search result will seek the video player to that timestamp.
 
-### 5. Downloading
-- In the **Download Queue**, select **Video**, **Audio**, or both for each clip.
-- Click **Start** to begin. If both formats are selected, the application will automatically create two separate download tasks.
-- Once finished, files are automatically saved to your browser's downloads folder.
+### 4. Downloading
+- In the **Download Queue**, choose between **Video** or **Audio** format for each clip.
+- Click **Start** to begin the process. Once finished, the file will automatically be saved to your downloads folder.
+- Use **Queue Full Video** or **Queue Full Audio** to quickly add the entire video to the queue.
 
-### 6. Channel/Playlist Browsing
-- If you enter a channel or playlist URL, you can browse through the videos.
+### 5. Channel/Artist Browsing
+- If you enter a channel or artist URL, you can browse through their releases.
+- For YouTube Music, use the **Albums** or **Singles** tabs to find collections.
 - Use the **Inspect** (Eye icon) to view details of a specific video or **Plus** icon to add it to your queue.
 - Support for "Videos", "Shorts", "Streams", and "Playlists" tabs in channels.
 
@@ -151,13 +120,14 @@ Paste a YouTube or YouTube Music URL (Video, Song, Album, Playlist, or Channel) 
 ## Tech Stack
 
 - **Frontend:** React, TypeScript, Vite, Axios, Lucide-React.
-- **Backend:** FastAPI (Python), yt-dlp, uvicorn.
+- **Backend:** FastAPI (Python), yt-dlp, ytmusicapi, uvicorn.
 - **Containerization:** Docker, Docker Compose, Nginx.
 
 ## Security & Safety
 
 - No personal data is stored.
 - Downloaded files are temporarily stored in `backend/temp_downloads` and automatically cleaned up.
+- Persistent library files are stored in `backend/library`.
 - Never commit secrets or API keys.
 
 ## License

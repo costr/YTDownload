@@ -3,6 +3,7 @@ node_modules/
 venv/
 __pycache__/
 temp_downloads/
+library/
 *.mp4
 *.mp3
 *.mkv

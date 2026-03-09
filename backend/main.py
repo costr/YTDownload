@@ -12,11 +12,17 @@ import requests
 import re
 import asyncio
 import glob
+from ytmusicapi import YTMusic
+import shutil
+import zipfile
 
 from contextlib import asynccontextmanager
 
+# Initialize YTMusic
+ytmusic = YTMusic()
+
 async def auto_cleanup():
-    """Periodically deletes files older than 1 hour in the background."""
+    """Periodically deletes files older than 1 hour in the temp folder."""
     while True:
         try:
             now = time.time()
@@ -47,7 +53,8 @@ def cleanup_task_files(task_id: str):
     for f in files:
         try:
             if os.path.exists(f):
-                os.remove(f)
+                if os.path.isfile(f): os.remove(f)
+                else: shutil.rmtree(f)
         except Exception as e:
             print(f"Failed to delete {f}: {e}")
 
@@ -59,41 +66,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def parse_vtt(vtt_text: str):
-    transcript = []
-    # Simple VTT parser: look for timestamp lines and the following text
-    # 00:00:00.000 --> 00:00:00.000
-    blocks = re.split(r'\n\s*\n', vtt_text)
-    for block in blocks:
-        lines = block.strip().split('\n')
-        if len(lines) >= 2:
-            time_match = re.match(r'(\d{2}:\d{2}:\d{2}\.\d{3}) --> (\d{2}:\d{2}:\d{2}\.\d{3})', lines[0])
-            if time_match:
-                start_str = time_match.group(1)
-                # Convert 00:00:00.000 to seconds
-                h, m, s = start_str.split(':')
-                start_sec = int(h) * 3600 + int(m) * 60 + float(s)
-                
-                text = " ".join(lines[1:]).replace('<c>', '').replace('</c>', '').strip()
-                if text:
-                    transcript.append({'start': start_sec, 'text': text})
-    return transcript
-
 TEMP_DIR = os.path.join(os.getcwd(), "temp_downloads")
-if os.path.exists(TEMP_DIR):
-    import shutil
-    # Clear anything left over from previous runs
-    for filename in os.listdir(TEMP_DIR):
-        file_path = os.path.join(TEMP_DIR, filename)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)
-        except Exception as e:
-            print(f'Failed to delete {file_path}. Reason: {e}')
-else:
-    os.makedirs(TEMP_DIR, exist_ok=True)
+LIBRARY_DIR = os.path.join(os.getcwd(), "library")
+
+for d in [TEMP_DIR, LIBRARY_DIR]:
+    if not os.path.exists(d):
+        os.makedirs(d, exist_ok=True)
 
 tasks: Dict[str, dict] = {}
 
@@ -113,6 +91,10 @@ class DownloadRequest(BaseModel):
     audio_only: bool = False
     precise: bool = False
     clip: Optional[Clip] = None
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    is_music: bool = False
+    is_collection: bool = False
 
 def parse_time(timestr: str) -> float:
     if not timestr: return 0.0
@@ -125,37 +107,58 @@ def parse_time(timestr: str) -> float:
     except:
         return 0.0
 
+def sanitize_path(name: str) -> str:
+    if not name: return "Unknown"
+    return re.sub(r'[\\/*?:"<>|]', "", name).strip()
+
 async def download_worker(task_id: str, request: DownloadRequest):
     async with download_semaphore:
-        # Pre-cleanup in case this is a retry
         cleanup_task_files(task_id)
-        
         tasks[task_id]['status'] = 'processing'
-        output_template = os.path.join(TEMP_DIR, f"{task_id}.%(ext)s")
         
+        # 1. Setup paths
+        artist_folder = sanitize_path(request.artist or "Downloads")
+        if request.audio_only:
+            sub_folder = sanitize_path(request.album or "Singles")
+        else:
+            sub_folder = "Music Videos"
+        
+        # The persistent library path
+        lib_target_dir = os.path.join(LIBRARY_DIR, artist_folder, sub_folder)
+        os.makedirs(lib_target_dir, exist_ok=True)
+        
+        # The temporary work path for this specific task (to be zipped)
+        # We put it inside temp_downloads to ensure cleanup
+        task_work_dir = os.path.join(TEMP_DIR, task_id)
+        os.makedirs(task_work_dir, exist_ok=True)
+
         def progress_hook(d):
             if d['status'] == 'downloading':
                 p_str = d.get('_percent_str', '0%').strip().replace('%', '')
                 try:
                     tasks[task_id]['progress'] = float(p_str)
-                except:
-                    pass
+                except: pass
             elif d['status'] == 'finished':
                 tasks[task_id]['progress'] = 100
 
         try:
-            # We run yt-dlp in a thread to keep the event loop free
             def run_ytdl():
+                # If it's a collection, we use a template that preserves track titles
+                if request.is_collection:
+                    # In task_work_dir for zipping
+                    out_tmpl = os.path.join(task_work_dir, "%(title)s.%(ext)s")
+                else:
+                    # Single file
+                    out_tmpl = os.path.join(task_work_dir, f"{task_id}.%(ext)s")
+
                 ydl_opts = {
-                    'outtmpl': output_template,
+                    'outtmpl': out_tmpl,
                     'quiet': True,
-                    'noplaylist': True,
+                    'noplaylist': not request.is_collection,
                     'progress_hooks': [progress_hook],
                     'concurrent_fragment_downloads': 5,
                     'format': 'bestvideo+bestaudio/best' if not request.audio_only else 'bestaudio/best',
-                    # SponsorBlock integration
                     'sponsorblock_remove': ['sponsor', 'selfpromo', 'interaction', 'intro', 'outro', 'preview'],
-                    # Metadata & Thumbnail Tagging
                     'writethumbnail': True,
                     'writemetadata': True,
                     'postprocessors': [
@@ -168,13 +171,13 @@ async def download_worker(task_id: str, request: DownloadRequest):
                     ydl_opts['postprocessors'].insert(0, {
                         'key': 'FFmpegExtractAudio',
                         'preferredcodec': 'mp3',
-                        'preferredquality': '320', # High quality for music
+                        'preferredquality': '320',
                     })
                 elif request.format_id != "best":
                     ydl_opts['format'] = f"{request.format_id}+bestaudio/best"
                     ydl_opts['merge_output_format'] = 'mp4'
 
-                if request.clip:
+                if request.clip and not request.is_collection:
                     ydl_opts['download_ranges'] = lambda info_dict, ydl: [{
                         'start_time': parse_time(request.clip.start),
                         'end_time': parse_time(request.clip.end) if request.clip.end else info_dict.get('duration'),
@@ -183,232 +186,195 @@ async def download_worker(task_id: str, request: DownloadRequest):
                     ydl_opts['prefer_ffmpeg'] = True
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    if request.title:
-                        ydl.params['parse_metadata'] = [f":(?P<title>{request.title})"]
                     ydl.download([request.url])
 
-            # Run in a separate thread to avoid blocking the async loop
             await asyncio.to_thread(run_ytdl)
 
-            # Get video info again to find the upload date
-            upload_date = None
-            try:
-                with yt_dlp.YoutubeDL({'quiet': True, 'noplaylist': True}) as ydl:
-                    info = ydl.extract_info(request.url, download=False)
-                    upload_date = info.get('upload_date') # YYYYMMDD
-            except:
-                pass
-
-            # Only pick up the actual media files, avoiding thumbnails or metadata
-            valid_extensions = ('.mp4', '.mp3', '.m4a', '.webm', '.mkv', '.wav')
-            files = [f for f in os.listdir(TEMP_DIR) if f.startswith(task_id) and f.lower().endswith(valid_extensions) and not f.endswith(('.part', '.ytdl'))]
+            # 2. After download, sync to LIBRARY and prepare return
+            valid_extensions = ('.mp4', '.mp3', '.m4a', '.webm', '.mkv', '.wav', '.jpg', '.png', '.webp')
+            downloaded_files = [f for f in os.listdir(task_work_dir) if f.lower().endswith(valid_extensions)]
             
-            if files:
-                # Prefer the one with the expected extension if possible, or just the first one
-                file_path = os.path.join(TEMP_DIR, files[0])
-                
-                # If we have an upload date, let's set the file's modification time to match it
-                if upload_date:
-                    try:
-                        # Convert YYYYMMDD to a timestamp
-                        year = int(upload_date[:4])
-                        month = int(upload_date[4:6])
-                        day = int(upload_date[6:8])
-                        dt = time.mktime((year, month, day, 0, 0, 0, 0, 0, 0))
-                        os.utime(file_path, (dt, dt))
-                    except:
-                        pass
+            # Copy all files to the library for Plex (persistent)
+            for f in downloaded_files:
+                src = os.path.join(task_work_dir, f)
+                # If it's a thumbnail and we want 'cover.jpg' logic
+                if f.lower().endswith(('.jpg', '.png', '.webp')) and request.artist:
+                    dst = os.path.join(lib_target_dir, "cover.jpg")
+                    if not os.path.exists(dst): shutil.copy2(src, dst)
+                else:
+                    dst = os.path.join(lib_target_dir, f)
+                    shutil.copy2(src, dst)
 
-                tasks[task_id]['status'] = 'completed'
-                tasks[task_id]['file_path'] = file_path
-                # We'll use the original extension
-                ext = os.path.splitext(files[0])[1][1:]
-                tasks[task_id]['filename'] = f"{task_id}.{ext}"
+            # 3. Handle browser download delivery
+            if request.is_collection:
+                # Create a zip of the task_work_dir
+                zip_filename = f"{sanitize_path(request.title or 'collection')}.zip"
+                zip_path = os.path.join(TEMP_DIR, f"{task_id}.zip")
                 
-                # Format the display title for the download: "Title (YYYY-MM-DD)"
-                display_title = request.title or "video"
-                if upload_date:
-                    formatted_date = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:8]}"
-                    display_title = f"{display_title} ({formatted_date})"
-                tasks[task_id]['download_name'] = f"{display_title}.{ext}"
+                with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    for f in downloaded_files:
+                        zipf.write(os.path.join(task_work_dir, f), f)
+                
+                tasks[task_id]['status'] = 'completed'
+                tasks[task_id]['file_path'] = zip_path
+                tasks[task_id]['filename'] = f"{task_id}.zip"
+                tasks[task_id]['download_name'] = zip_filename
+            else:
+                # Single file delivery
+                media_files = [f for f in downloaded_files if f.lower().endswith(('.mp4', '.mp3', '.m4a', '.webm', '.mkv', '.wav'))]
+                if media_files:
+                    # Rename task_id file if it's there
+                    src = os.path.join(task_work_dir, media_files[0])
+                    ext = os.path.splitext(media_files[0])[1][1:]
+                    final_name = f"{task_id}.{ext}"
+                    final_path = os.path.join(TEMP_DIR, final_name)
+                    shutil.move(src, final_path)
+                    
+                    tasks[task_id]['status'] = 'completed'
+                    tasks[task_id]['file_path'] = final_path
+                    tasks[task_id]['filename'] = final_name
+                    tasks[task_id]['download_name'] = f"{sanitize_path(request.title or 'video')}.{ext}"
+                else:
+                    tasks[task_id]['status'] = 'error'
+                    tasks[task_id]['error'] = "No media file found after download"
+
+            # Cleanup the task work dir
+            shutil.rmtree(task_work_dir)
 
         except Exception as e:
             tasks[task_id]['status'] = 'error'
             tasks[task_id]['error'] = str(e)
+            if os.path.exists(task_work_dir): shutil.rmtree(task_work_dir)
 
 @app.post("/info")
 def get_video_info(request: VideoRequest):
     try:
-        # Detect if it's a channel URL, ensuring it's not a watch URL
+        is_music = "music.youtube.com" in request.url
         is_watch = "watch?v=" in request.url or "youtu.be/" in request.url
-        is_channel = not is_watch and ("/@" in request.url or "/channel/" in request.url or "/c/" in request.url or "/user/" in request.url)
+        is_channel = not is_watch and ("/@" in request.url or "/channel/" in request.url or "/c/" in request.url or "/user/" in request.url or (is_music and "/channel/" in request.url) or (is_music and "/browse/MPAD" in request.url))
         
         if is_channel:
-            # Robust way to get the base channel URL
             clean_url = request.url.rstrip('/')
             parts = clean_url.split('/')
+            channel_id = parts[-1]
+            if "/channel/" in clean_url: channel_id = parts[parts.index("channel") + 1]
             
-            # Identify if a specific tab was requested in the URL
-            target_tab = "Videos"
-            if parts[-1].lower() in ["shorts", "streams", "playlists", "videos"]:
-                target_tab = parts[-1].capitalize()
-                base_url = "/".join(parts[:4])
-            else:
-                # Default to Videos and try to find base URL up to the @name part
-                target_tab = "Videos"
-                if len(parts) >= 4:
-                    base_url = "/".join(parts[:4])
-                else:
-                    base_url = clean_url
-            
-            # If a specific tab is requested (for infinite scroll) via the API param
+            if is_music:
+                try:
+                    if request.tab in ["Albums", "Singles"]:
+                        artist = ytmusic.get_artist(channel_id)
+                        results = []
+                        if request.tab == "Albums" and 'albums' in artist:
+                            album_data = artist['albums']
+                            results = ytmusic.get_artist_albums(album_data['browseId'], album_data['params']) if 'browseId' in album_data and 'params' in album_data else album_data.get('results', [])
+                        elif request.tab == "Singles" and 'singles' in artist:
+                            single_data = artist['singles']
+                            results = ytmusic.get_artist_albums(single_data['browseId'], single_data['params']) if 'browseId' in single_data and 'params' in single_data else single_data.get('results', [])
+                        
+                        entries = []
+                        for r in results:
+                            p_id = r.get('browseId') or r.get('playlistId')
+                            if not p_id: continue
+                            entries.append({
+                                'title': r.get('title'),
+                                'url': f"https://music.youtube.com/playlist?list={r.get('audioPlaylistId') or r.get('playlistId') or p_id}",
+                                'id': p_id,
+                                'thumbnail': r.get('thumbnails', [{}])[-1].get('url') if r.get('thumbnails') else None,
+                                'is_music': True,
+                                'is_playlist': True
+                            })
+                        return {"entries": entries, "next_offset": None, "is_music": True}
+                    elif request.tab == "Videos":
+                        tab_url = f"https://www.youtube.com/channel/{channel_id}/videos"
+                        start = (request.offset or 0) + 1
+                        end = start + 14
+                        ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'playlist_items': f"{start}:{end}"}
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            res = ydl.extract_info(tab_url, download=False)
+                            entries = []
+                            for entry in res.get('entries', []):
+                                if not entry or not entry.get('id') or entry.get('title') == '[Private video]': continue
+                                entries.append({
+                                    'title': entry.get('title'),
+                                    'url': f"https://music.youtube.com/watch?v={entry.get('id')}",
+                                    'id': entry.get('id'),
+                                    'thumbnail': entry.get('thumbnail') or (entry.get('thumbnails')[0].get('url') if entry.get('thumbnails') else None),
+                                    'is_music': True,
+                                    'is_playlist': False
+                                })
+                            return {"entries": entries, "next_offset": end if len(entries) >= 15 else None, "is_music": True}
+
+                    artist = ytmusic.get_artist(channel_id)
+                    return {
+                        "is_channel": True, "is_music": True, "title": artist.get('name') or channel_id,
+                        "tabs": ["Albums", "Singles", "Videos"], "active_tab": "Albums", "original_url": request.url
+                    }
+                except Exception as e: print(f"Music browsing error: {e}")
+
+            identifier_index = 3
+            if "/channel/" in clean_url: identifier_index = 4
+            base_url = "/".join(parts[:identifier_index + 1]) if len(parts) > identifier_index else clean_url
+
             if request.tab:
-                suffix = f"/{request.tab.lower()}"
-                tab_url = f"{base_url}{suffix}"
+                yt_tab_map = {"Albums": "playlists", "Singles": "playlists", "Videos": "videos", "Playlists": "playlists", "Shorts": "shorts", "Streams": "streams"}
+                tab_url = f"{base_url}/{yt_tab_map.get(request.tab, request.tab.lower())}"
                 start = (request.offset or 0) + 1
-                end = start + 49
-                
-                ydl_opts = {
-                    'quiet': True, 
-                    'extract_flat': 'in_playlist',
-                    'playlist_items': f"{start}:{end}",
-                }
-                
+                end = start + 14
+                ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'playlist_items': f"{start}:{end}"}
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     res = ydl.extract_info(tab_url, download=False)
                     entries = []
                     for entry in res.get('entries', []):
-                        if not entry or not entry.get('id') or entry.get('title') == '[Private video]':
-                            continue
+                        if not entry or not entry.get('id') or entry.get('title') == '[Private video]': continue
                         entries.append({
                             'title': entry.get('title'),
-                            'url': entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}",
+                            'url': f"https://www.youtube.com/playlist?list={entry.get('id')}" if entry.get('_type') == 'playlist' else f"https://www.youtube.com/watch?v={entry.get('id')}",
                             'id': entry.get('id'),
-                            'thumbnail': entry.get('thumbnails', [{}])[0].get('url') if entry.get('thumbnails') else None
+                            'thumbnail': entry.get('thumbnail') or (entry.get('thumbnails')[0].get('url') if entry.get('thumbnails') else None),
+                            'is_music': is_music,
+                            'is_playlist': entry.get('_type') == 'playlist'
                         })
-                    
-                    return {"entries": entries, "next_offset": end if entries else None}
+                    return {"entries": entries, "next_offset": end if len(entries) >= 15 else None, "is_music": is_music}
 
-            # Initial channel load - just get first page of everything or specific tabs
-            tabs = ["Videos", "Shorts", "Streams", "Playlists"]
-            return {
-                "is_channel": True,
-                "title": base_url.split('@')[-1],
-                "tabs": tabs,
-                "active_tab": target_tab,
-                "original_url": request.url
-            }
+            with yt_dlp.YoutubeDL({'quiet': True, 'extract_flat': True}) as ydl:
+                res = ydl.extract_info(base_url, download=False)
+                channel_title = res.get('channel') or res.get('uploader') or res.get('title') or base_url.split('/')[-1]
 
-        # Existing Playlist/Video logic
-        ydl_opts = {
-            'quiet': True, 
-            'extract_flat': 'in_playlist',
-            'noplaylist': True,
-        }
+            tabs = ["Albums", "Singles", "Videos", "Playlists"] if is_music else ["Videos", "Shorts", "Streams", "Playlists"]
+            return {"is_channel": True, "is_music": is_music, "title": channel_title, "tabs": tabs, "active_tab": "Albums" if is_music else "Videos", "original_url": request.url}
+
+        ydl_opts = {'quiet': True, 'extract_flat': 'in_playlist', 'noplaylist': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # First extraction to see what it is
             result = ydl.extract_info(request.url, download=False)
-            
             if result.get('_type') == 'playlist' or 'entries' in result:
                 entries = []
                 for entry in result.get('entries', []):
-                    # Skip private or unavailable videos
-                    if not entry or not entry.get('id') or entry.get('title') == '[Private video]':
-                        continue
-                        
-                    # Extract thumbnail from the entry
-                    thumbnail = entry.get('thumbnail')
-                    if not thumbnail and entry.get('thumbnails'):
-                        thumbnail = entry.get('thumbnails')[0].get('url')
-                        
+                    if not entry or not entry.get('id') or entry.get('title') == '[Private video]': continue
                     entries.append({
                         'title': entry.get('title') or f"Video {entry.get('id')}",
-                        'url': f"https://www.youtube.com/watch?v={entry.get('id')}",
+                        'url': entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}",
                         'id': entry.get('id'),
-                        'thumbnail': thumbnail
+                        'thumbnail': entry.get('thumbnail') or (entry.get('thumbnails')[0].get('url') if entry.get('thumbnails') else None),
+                        'is_music': is_music
                     })
-                return {
-                    "is_playlist": True,
-                    "is_channel": False,
-                    "title": result.get('title'),
-                    "entries": entries,
-                    "original_url": request.url
-                }
+                return {"is_playlist": True, "is_channel": False, "is_music": is_music, "title": result.get('title'), "entries": entries, "original_url": request.url}
 
-            # If it's a single video, we re-extract with full info (subtitles, heatmap, etc)
             ydl_opts['extract_flat'] = False
-            ydl_opts['writesubtitles'] = True
-            ydl_opts['writeautomaticsub'] = True
-            ydl_opts['subtitleslangs'] = ['en.*', 'en', 'en-US', 'en-GB', '.*'] # Broaden language support
+            if not is_music:
+                ydl_opts['writesubtitles'] = True
+                ydl_opts['writeautomaticsub'] = True
+                ydl_opts['subtitleslangs'] = ['en.*', 'en', 'en-US', 'en-GB', '.*']
             
             info = ydl.extract_info(request.url, download=False)
-            
-            # Extract chapters
-            chapters = []
-            raw_chapters = info.get('chapters') or []
-            for c in raw_chapters:
-                chapters.append({
-                    'title': c.get('title'),
-                    'start': c.get('start_time'),
-                    'end': c.get('end_time')
-                })
-
-            formats = []
-            seen_res = set()
-            for f in info.get('formats', []):
-                res = f.get('height')
-                if res and res >= 360:
-                    res_key = f"{res}p"
-                    if res_key not in seen_res:
-                        formats.append({'format_id': f['format_id'], 'resolution': res_key, 'ext': f.get('ext', 'mp4')})
-                        seen_res.add(res_key)
-            
-            formats.sort(key=lambda x: int(x['resolution'][:-1]), reverse=True)
-            
-            # Subtitle/Transcript logic
-            transcript = []
-            subs = info.get('subtitles', {}) or {}
-            auto_subs = info.get('automatic_captions', {}) or {}
-            
-            # Helper to find any English variant or first available
-            def find_best_subs(sub_dict):
-                # Try common English keys first
-                for key in ['en', 'en-US', 'en-GB', 'en-orig']:
-                    if key in sub_dict: return sub_dict[key]
-                # Look for anything starting with 'en'
-                for key in sub_dict:
-                    if key.startswith('en'): return sub_dict[key]
-                # Fallback to any if English not found
-                if sub_dict: return next(iter(sub_dict.values()))
-                return None
-
-            best_subs = find_best_subs(subs) or find_best_subs(auto_subs)
-            
-            if best_subs:
-                # Find vtt format
-                vtt_url = next((s['url'] for s in best_subs if s.get('ext') == 'vtt'), None)
-                if vtt_url:
-                    try:
-                        vtt_resp = requests.get(vtt_url)
-                        if vtt_resp.status_code == 200:
-                            transcript = parse_vtt(vtt_resp.text)
-                    except:
-                        pass
-
             return {
-                "is_playlist": False,
-                "is_channel": False,
-                "title": info.get('title'),
-                "duration": info.get('duration'),
-                "thumbnail": info.get('thumbnail'),
-                "formats": formats,
-                "chapters": chapters,
-                "heatmap": info.get('heatmap'),
-                "transcript": transcript,
-                "original_url": request.url
+                "is_playlist": False, "is_channel": False, "is_music": is_music,
+                "title": info.get('title'), "artist": info.get('artist') or info.get('uploader'), "album": info.get('album'),
+                "duration": info.get('duration'), "thumbnail": info.get('thumbnail'),
+                "formats": [{'format_id': f['format_id'], 'resolution': f"{f.get('height')}p", 'ext': f.get('ext', 'mp4')} for f in info.get('formats', []) if f.get('height') and f.get('height') >= 360],
+                "chapters": [{'title': c.get('title'), 'start': c.get('start_time'), 'end': c.get('end_time')} for c in (info.get('chapters') or [])],
+                "heatmap": info.get('heatmap') if not is_music else None, "transcript": [], "original_url": request.url
             }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e: raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/download")
 async def start_download(request: DownloadRequest):
@@ -419,26 +385,21 @@ async def start_download(request: DownloadRequest):
 
 @app.get("/status/{task_id}")
 def get_status(task_id: str):
-    if task_id not in tasks:
-        raise HTTPException(status_code=404, detail="Task not found")
+    if task_id not in tasks: raise HTTPException(status_code=404, detail="Task not found")
     return tasks[task_id]
 
 @app.get("/download/{task_id}")
 def download_file(task_id: str, background_tasks: BackgroundTasks):
-    if task_id not in tasks or tasks[task_id]['status'] != 'completed':
-        raise HTTPException(status_code=400, detail="File not ready")
-    
+    if task_id not in tasks or tasks[task_id]['status'] != 'completed': raise HTTPException(status_code=400, detail="File not ready")
     file_path = tasks[task_id]['file_path']
-    
     def cleanup():
         time.sleep(15)
         cleanup_task_files(task_id)
-        if task_id in tasks:
-            del tasks[task_id]
-
+        if os.path.exists(file_path): 
+            try: os.remove(file_path)
+            except: pass
+        if task_id in tasks: del tasks[task_id]
     background_tasks.add_task(cleanup)
-    
-    # Use the human-friendly download name if available
     filename = tasks[task_id].get('download_name', tasks[task_id].get('filename', 'video.mp4'))
     return FileResponse(file_path, filename=filename)
 

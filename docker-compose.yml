@@ -6,6 +6,7 @@ services:
       - "8000:8000"
     volumes:
       - temp_downloads:/app/temp_downloads
+      - library:/app/library
     restart: always
 
   frontend:
@@ -21,3 +22,4 @@ services:
 
 volumes:
   temp_downloads:
+  library:

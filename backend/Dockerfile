@@ -3,9 +3,17 @@ FROM python:3.11-slim
 
 # Install system dependencies
 # ffmpeg is required for yt-dlp to merge video/audio and handle post-processing
+# curl and unzip are needed to install Deno
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Deno (recommended JS runtime for yt-dlp)
+RUN curl -fsSL https://deno.land/install.sh | sh
+ENV DENO_INSTALL="/root/.deno"
+ENV PATH="$DENO_INSTALL/bin:$PATH"
 
 # Set the working directory in the container
 WORKDIR /app
